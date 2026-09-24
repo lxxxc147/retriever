@@ -1,0 +1,21 @@
+{
+  "results": [
+    {
+      "title": "A Survey on LLM-based Agents 大模型智能体综述",
+      "url": "https://example.org/papers/2401.00001",
+      "summary": "A comprehensive survey on LLM-based autonomous agents.",
+      "download_url": "https://example.org/files/2401.00001.pdf"
+    },
+    {
+      "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+      "url": "https://example.org/papers/2005.11401",
+      "summary": "RAG combines parametric and non-parametric memory."
+    },
+    {
+      "title": "Attention Is All You Need 注意力机制",
+      "url": "https://example.org/papers/1706.03762",
+      "summary": "The transformer architecture.",
+      "download_url": "https://example.org/files/1706.03762.pdf"
+    }
+  ]
+}

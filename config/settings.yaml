@@ -1,0 +1,19 @@
+download:
+  base_dir: "./downloads"
+  max_concurrent: 3
+  max_retries: 3
+  timeout_seconds: 60
+
+ranking:
+  weights:
+    source: 0.4        # 来源可信度
+    recency: 0.3       # 时效性（按年份衰减）
+    popularity: 0.3    # 引用数/stars 对数归一
+
+sources:
+  arxiv:
+    enabled: true
+    rate_limit_qps: 1
+  github:
+    enabled: true
+    rate_limit_qps: 2

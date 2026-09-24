@@ -1,0 +1,14 @@
+# 数据源注册表（Adapter registry）
+# 新增数据源 = 实现 SearchAdapter 接口（adapters/base.py）+ 在本文件注册条目。
+# 路由按 intent 选择启用的数据源，不改代码即可增删。
+arxiv:
+  enabled: true
+  rate_limit_qps: 1
+  adapter: retriever.adapters.arxiv:ArxivAdapter
+  # Phase 2 实现（任务 A-1/A-2，成员A）
+
+github:
+  enabled: true
+  rate_limit_qps: 2
+  adapter: retriever.adapters.github:GithubAdapter
+  # Phase 1 由成员B实现（任务 B-1/B-2/B-3）

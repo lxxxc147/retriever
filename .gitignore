@@ -1,0 +1,34 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+
+# Environment variables / secrets
+.env
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Testing / tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Runtime output directories
+downloads/
+parsed/
+history/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
