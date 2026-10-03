@@ -12,37 +12,16 @@ The search endpoint (``https://example.org/api/search``) is intentionally a
 placeholder — the point is the *structure*, not the endpoint.
 """
 
-import hashlib
-import re
 from pathlib import Path
 
 from loguru import logger
 
 from ..http import HttpClient
 from ..models import DownloadResult, SearchQuery, SearchResult
+from ..utils import ensure_extension, sanitize_filename, sha256_of, url_extension
 from .base import SearchAdapter
 
 SEARCH_URL = "https://example.org/api/search"
-# Characters kept in sanitized file names: ASCII alphanumerics, CJK chars,
-# dot, underscore, dash. Spaces become underscores. Result is capped at
-# 80 characters.
-_SAFE_CHARS = re.compile(r"[^0-9A-Za-z\u4e00-\u9fff._-]+")
-
-
-def sanitize_filename(title: str, max_len: int = 80) -> str:
-    """Make a file name safe: keep alphanumerics/CJK/._-, spaces to "_", truncate.
-
-    Args:
-        title: Raw title, potentially containing illegal characters.
-        max_len: Maximum length of the sanitized name (before extension).
-
-    Returns:
-        A file-name-safe string.
-    """
-    name = title.replace(" ", "_")
-    name = _SAFE_CHARS.sub("_", name)
-    name = re.sub(r"_+", "_", name).strip("._-")
-    return name[:max_len] or "untitled"
 
 
 class ExampleAdapter(SearchAdapter):
@@ -105,11 +84,9 @@ class ExampleAdapter(SearchAdapter):
             return DownloadResult(success=False, error=str(exc))
 
         content = response.content
-        filename = sanitize_filename(result.title)
-        # Preserve a meaningful extension from the URL path if present.
-        url_suffix = Path(result.download_url.split("?")[0]).suffix
-        if url_suffix and len(url_suffix) <= 10:
-            filename += url_suffix.lower()
+        filename = ensure_extension(
+            sanitize_filename(result.title), url_extension(result.download_url)
+        )
 
         dest_dir.mkdir(parents=True, exist_ok=True)
         local_path = dest_dir / filename
@@ -119,5 +96,5 @@ class ExampleAdapter(SearchAdapter):
             success=True,
             local_path=local_path,
             size_bytes=len(content),
-            sha256=hashlib.sha256(content).hexdigest(),
+            sha256=sha256_of(content),
         )
