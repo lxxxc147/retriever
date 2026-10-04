@@ -22,7 +22,7 @@ ATOM_NS = "{http://www.w3.org/2005/Atom}"
 ARXIV_NS = "{http://arxiv.org/schemas/atom}"
 
 # Reuse project-standard filename sanitization logic
-_SAFE_CHARS = re.compile(r"[^0-9A-Za-z\u4e00-\u9fff._-]+")
+_SAFE_CHARS = re.compile(r"[^0-9A-Za-z一-鿿._-]+")
 
 
 def sanitize_filename(title: str, max_len: int = 80) -> str:
@@ -215,7 +215,16 @@ class ArxivAdapter(SearchAdapter):
             title = entry.findtext(f"{ATOM_NS}title", "").strip()
             abstract = entry.findtext(f"{ATOM_NS}summary", "").strip()
             published_str = entry.findtext(f"{ATOM_NS}published", "").strip()
-            arxiv_id = entry.findtext(f"{ARXIV_NS}id", "").strip()
+            # <id> lives in the Atom namespace (NOT the arXiv extension
+            # namespace), e.g. "http://arxiv.org/abs/1706.03762v7".
+            arxiv_id = (
+                entry.findtext(f"{ATOM_NS}id", "")
+                .strip()
+                .removesuffix("/")
+                .rsplit("/abs/", maxsplit=1)[-1]
+            )
+            # Strip the version suffix ("1706.03762v7" -> "1706.03762").
+            arxiv_id = arxiv_id.partition("v")[0]
 
             # Parse published datetime
             published_at: datetime | None = None
