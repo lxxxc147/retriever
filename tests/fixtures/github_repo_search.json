@@ -1,0 +1,38 @@
+{
+  "total_count": 2,
+  "incomplete_results": false,
+  "items": [
+    {
+      "full_name": "langchain-ai/langchain",
+      "name": "langchain",
+      "html_url": "https://github.com/langchain-ai/langchain",
+      "description": "Build context-aware reasoning applications",
+      "default_branch": "main",
+      "stargazers_count": 98000,
+      "forks_count": 15000,
+      "open_issues_count": 2100,
+      "language": "Python",
+      "license": {"spdx_id": "MIT", "name": "MIT License"},
+      "pushed_at": "2024-06-01T10:00:00Z",
+      "updated_at": "2024-06-02T09:30:00Z",
+      "owner": {"login": "langchain-ai"},
+      "topics": ["llm", "rag"]
+    },
+    {
+      "full_name": "run-llama/llama_index",
+      "name": "llama_index",
+      "html_url": "https://github.com/run-llama/llama_index",
+      "description": "LlamaIndex is a data framework for LLM applications",
+      "default_branch": "main",
+      "stargazers_count": 34000,
+      "forks_count": 4900,
+      "open_issues_count": 800,
+      "language": "Python",
+      "license": {"spdx_id": "MIT"},
+      "pushed_at": "2024-05-20T08:00:00Z",
+      "updated_at": "2024-05-21T08:00:00Z",
+      "owner": {"login": "run-llama"},
+      "topics": ["rag", "llm"]
+    }
+  ]
+}

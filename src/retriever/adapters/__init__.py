@@ -2,5 +2,6 @@
 
 from .base import SearchAdapter
 from .example import ExampleAdapter
+from .github import GithubAdapter
 
-__all__ = ["ExampleAdapter", "SearchAdapter"]
+__all__ = ["ExampleAdapter", "GithubAdapter", "SearchAdapter"]
