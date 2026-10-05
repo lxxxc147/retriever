@@ -12,7 +12,10 @@ dependencies = [
     "pyyaml>=6.0",
     "loguru>=0.7",
     "tenacity>=8.3",
+    "trafilatura>=1.5.0",
+    "beautifulsoup4>=4.12.0",
 ]
+
 
 [project.scripts]
 retrieve = "retriever.cli:app"
