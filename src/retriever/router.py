@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from retriever.adapters.base import SearchAdapter
-from retriever.adapters.web import WebAdapter
-from retriever.http import HttpClient
-from retriever.models import SearchQuery, SearchResult
+from .adapters.base import SearchAdapter
+from .adapters.web import WebAdapter
 
 # 可选导入 PDF 适配器，模块不存在则跳过注册
 try:
-    from retriever.adapters.pdf import PdfAdapter
+    from .adapters.pdf import PdfAdapter
 except ModuleNotFoundError:
     PdfAdapter = None
+
+from .http import HttpClient
+from .models import SearchQuery, SearchResult
 
 
 class AdapterRouter:
