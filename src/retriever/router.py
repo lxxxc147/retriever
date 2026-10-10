@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from retriever.adapters.base import SearchAdapter
-from retriever.adapters.pdf import PdfAdapter
 from retriever.adapters.web import WebAdapter
 from retriever.http import HttpClient
 from retriever.models import SearchQuery, SearchResult
+
+# 可选导入 PDF 适配器，模块不存在则跳过注册
+try:
+    from retriever.adapters.pdf import PdfAdapter
+except ModuleNotFoundError:
+    PdfAdapter = None
 
 
 class AdapterRouter:
@@ -32,8 +37,10 @@ class AdapterRouter:
         # 内置意图到适配器的映射
         default_intent_map: dict[str, type[SearchAdapter]] = {
             "web": WebAdapter,
-            "paper": PdfAdapter,
         }
+        # PDF 模块存在时才注册
+        if PdfAdapter is not None:
+            default_intent_map["paper"] = PdfAdapter
 
         # 注册内置适配器
         for intent, adapter_cls in default_intent_map.items():
@@ -65,7 +72,10 @@ class AdapterRouter:
         adapter = self._intent_adapters.get(intent)
         if not adapter:
             supported = ", ".join(sorted(self._intent_adapters.keys()))
-            raise ValueError(f"Unsupported search intent: {intent}. Supported intents: {supported}")
+            raise ValueError(
+                f"Unsupported search intent: {intent}. "
+                f"Supported intents: {supported}"
+            )
         return adapter
 
     def get_adapter_by_source(self, source: str) -> SearchAdapter:
@@ -83,7 +93,10 @@ class AdapterRouter:
         adapter = self._source_adapters.get(source)
         if not adapter:
             supported = ", ".join(sorted(self._source_adapters.keys()))
-            raise ValueError(f"Unsupported result source: {source}. Supported sources: {supported}")
+            raise ValueError(
+                f"Unsupported result source: {source}. "
+                f"Supported sources: {supported}"
+            )
         return adapter
 
     async def search(self, query: SearchQuery) -> list[SearchResult]:
