@@ -1,13 +1,25 @@
 from __future__ import annotations
 
+from loguru import logger
+
 from retriever.adapters.base import SearchAdapter
 from retriever.adapters.web import WebAdapter
 
-# 可选导入 PDF 适配器，模块不存在则跳过注册
+# 可选导入各适配器，模块不存在则跳过注册
 try:
     from retriever.adapters.pdf import PdfAdapter
 except ModuleNotFoundError:
     PdfAdapter = None
+
+try:
+    from retriever.adapters.scholar import ScholarAdapter
+except ModuleNotFoundError:
+    ScholarAdapter = None
+
+try:
+    from retriever.adapters.arxiv import ArxivAdapter
+except ModuleNotFoundError:
+    ArxivAdapter = None
 
 from retriever.http import HttpClient
 from retriever.models import SearchQuery, SearchResult
@@ -39,9 +51,13 @@ class AdapterRouter:
         default_intent_map: dict[str, type[SearchAdapter]] = {
             "web": WebAdapter,
         }
-        # PDF 模块存在时才注册
+        # 模块存在且接口兼容时才注册
         if PdfAdapter is not None:
             default_intent_map["paper"] = PdfAdapter
+        if ScholarAdapter is not None:
+            default_intent_map["scholar"] = ScholarAdapter
+        if ArxivAdapter is not None:
+            default_intent_map["arxiv"] = ArxivAdapter
 
         # 注册内置适配器
         for intent, adapter_cls in default_intent_map.items():
@@ -53,10 +69,19 @@ class AdapterRouter:
                 self._register_adapter(intent, adapter_cls)
 
     def _register_adapter(self, intent: str, adapter_cls: type[SearchAdapter]) -> None:
-        """注册适配器，同时建立 intent 和 source 双向映射。"""
-        adapter = adapter_cls(self._http_client)
-        self._intent_adapters[intent] = adapter
-        self._source_adapters[adapter.source_name] = adapter
+        """注册适配器，同时建立 intent 和 source 双向映射。
+        接口不兼容或初始化失败的适配器自动跳过并记录日志，不影响整体。
+        """
+        try:
+            adapter = adapter_cls(self._http_client)
+            # 校验必要属性，缺失则跳过注册
+            if not hasattr(adapter, "source_name"):
+                logger.warning(f"跳过注册适配器 {intent}: 缺少 source_name 属性")
+                return
+            self._intent_adapters[intent] = adapter
+            self._source_adapters[adapter.source_name] = adapter
+        except (AttributeError, TypeError) as e:
+            logger.warning(f"跳过注册适配器 {intent}: 初始化失败 - {e}")
 
     def get_adapter_by_intent(self, intent: str) -> SearchAdapter:
         """根据查询意图获取对应适配器实例。
@@ -113,7 +138,7 @@ class AdapterRouter:
         return await adapter.search(query)
 
     async def download(self, result: SearchResult, output_dir: str) -> str:
-        """统一下载入口，根据结果来源自动路由到对应适配器执行下载。
+        """统一下载入口，根据来源自动路由到对应适配器执行下载。
 
         Args:
             result: 搜索结果项
