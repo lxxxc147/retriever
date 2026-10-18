@@ -13,6 +13,18 @@ uv sync                 # 安装全部依赖（含 dev 组）
 cp .env.example .env    # 填入自己的 GitHub Token（见文件内注释）
 ```
 
+### 代理（可选，国内建议配置）
+
+直连 `raw.githubusercontent.com` / `codeload.github.com` 经常在传输中途卡死，表现为
+**搜索正常但下载失败**。在 `.env` 里配置即可全程走代理：
+
+```bash
+RETRIEVER_PROXY=http://127.0.0.1:7897   # 本机 Clash 混合端口
+```
+
+优先级：`RETRIEVER_PROXY`（`.env`）> `network.proxy`（`config/settings.yaml`）>
+环境变量 `HTTP_PROXY` / `HTTPS_PROXY`；都为空则直连。
+
 ## 快速开始
 
 ```bash

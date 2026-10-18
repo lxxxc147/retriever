@@ -1,0 +1,15 @@
+{
+  "total_count": 1,
+  "incomplete_results": false,
+  "items": [
+    {
+      "name": "retriever.py",
+      "path": "src/retriever.py",
+      "html_url": "https://github.com/foo/bar/blob/617986f4570d56174cf3759392e02d7af9f58fa6/src/retriever.py",
+      "repository": {
+        "full_name": "foo/bar",
+        "owner": {"login": "foo"}
+      }
+    }
+  ]
+}
