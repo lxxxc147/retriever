@@ -51,7 +51,7 @@ def _stubs() -> dict[str, _StubAdapter]:
 def stub_router(monkeypatch: pytest.MonkeyPatch) -> dict[str, _StubAdapter]:
     """Swap ``cli.Router`` for one backed by in-memory stub adapters."""
     stubs = _stubs()
-    monkeypatch.setattr(cli, "Router", lambda: Router(adapters=list(stubs.values()))
+    monkeypatch.setattr(cli, "Router", lambda: Router(adapters=list(stubs.values())))
     return stubs
 
 
