@@ -56,7 +56,7 @@ _LANGUAGE_SLOT_RE = re.compile(rf"language\s*:\s*({_LANGUAGE_ALT})", re.IGNORECA
 _IN_LANGUAGE_RE = re.compile(rf"\bin\s+({_LANGUAGE_ALT})\b", re.IGNORECASE)
 _ZH_LANGUAGE_RE = re.compile(rf"({_LANGUAGE_ALT})\s*实现", re.IGNORECASE)
 _CODE_FILE_RE = re.compile(r"\.(?:py|js|ts|jsx|tsx|java|go|rs|cpp|c|h|rb|cs)\b", re.IGNORECASE)
-_STARS_SLOT_RE = re.compile(r"stars?\s*[:>]?=\s*>\s*(\d+)", re.IGNORECASE)
+_STARS_SLOT_RE = re.compile(r"stars?\s*[:>]?=?\s*>\s*(\d+)", re.IGNORECASE)
 _STARS_GT_RE = re.compile(r"[>≥]\s*(\d+)\s*stars?\b", re.IGNORECASE)
 _STARS_ZH_RE = re.compile(r"至少\s*(\d+)\s*(?:个)?\s*(?:stars?|星)", re.IGNORECASE)
 
@@ -113,7 +113,7 @@ def _extract_url_slots(user_input: str) -> tuple[str, Intent | None, list[str]]:
         url = match.group(0)
         arxiv_match = _ARXIV_URL_RE.search(url)
         if arxiv_match:
-            arxiv_id = arxiv_match.group(1).split("?")[0].rstrip(")】]>")
+            arxiv_id = arxiv_match.group(1).split("?")[0].rstrip("/)】]>")
             arxiv_id = re.sub(r"\.pdf$", "", arxiv_id, flags=re.IGNORECASE)
             intent = "paper"
             keywords.append(arxiv_id)
