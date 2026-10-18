@@ -31,6 +31,8 @@ from tenacity import (
     wait_exponential,
 )
 
+from .config import resolve_proxy
+
 # 4xx statuses (other than 429) are permanent client errors — never retry.
 NON_RETRYABLE_STATUSES = {400, 401, 403, 404, 405, 406, 410, 422, 451}
 
@@ -63,6 +65,7 @@ class HttpClient:
         timeout_seconds: float = 60.0,
         client: httpx.AsyncClient | None = None,
         sleeper: Callable[[float], object] = asyncio.sleep,
+        proxy: str | None = None,
     ) -> None:
         """Initialize the client.
 
@@ -73,15 +76,31 @@ class HttpClient:
             client: Optional pre-built ``httpx.AsyncClient`` (mainly for tests).
             sleeper: Async sleep callable used for rate-limit pacing
                 (injectable so tests can avoid real waiting).
+            proxy: Outbound proxy URL. ``None`` (the default) resolves it from
+                ``RETRIEVER_PROXY`` / ``network.proxy``; pass ``""`` to force a
+                direct connection.
         """
         self.rate_limit_qps = rate_limit_qps
         self.max_retries = max_retries
         self._min_interval = 1.0 / rate_limit_qps if rate_limit_qps > 0 else 0.0
-        self._client = client or httpx.AsyncClient(
-            timeout=httpx.Timeout(timeout_seconds),
-            http2=True,
-            follow_redirects=True,
-        )
+        self.proxy = resolve_proxy() if proxy is None else (proxy.strip() or None)
+        if client is not None:
+            self._client = client
+        else:
+            # A pre-built transport (rather than httpx's ``proxy=`` shorthand)
+            # keeps ``_transport`` the single interception point, so mocking
+            # libraries that swap ``_transport`` keep working.
+            transport = (
+                httpx.AsyncHTTPTransport(http2=True, proxy=self.proxy) if self.proxy else None
+            )
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(timeout_seconds),
+                http2=True,
+                follow_redirects=True,
+                transport=transport,
+            )
+        if self.proxy:
+            logger.debug("HttpClient routing requests through proxy {}", self.proxy)
         self._owns_client = client is None
         self._sleeper = sleeper
         self._locks: dict[str, asyncio.Lock] = {}

@@ -1,1 +1,5 @@
-"""M6 Content Parsers (PDF / code) — placeholders. Phase 3 implementation, see PRD §2.6."""
+"""M6 Content Parsers (PDF / code), PRD §2.6."""
+
+from .code import parse_code
+
+__all__ = ["parse_code"]

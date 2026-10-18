@@ -26,6 +26,19 @@ class EnvSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     github_token: str = ""
+    retriever_proxy: str = ""
+
+
+class NetworkConfig(BaseModel):
+    """``network`` section of ``config/settings.yaml``.
+
+    ``proxy`` is the default outbound proxy for every request, e.g.
+    ``http://127.0.0.1:7897`` for a local Clash mixed port. Leave it empty to
+    make httpx honour ``HTTP_PROXY`` / ``HTTPS_PROXY`` / ``NO_PROXY`` instead.
+    ``RETRIEVER_PROXY`` in ``.env`` overrides this value.
+    """
+
+    proxy: str = ""
 
 
 class DownloadConfig(BaseModel):
@@ -42,6 +55,7 @@ class Settings(BaseModel):
 
     env: EnvSettings
     download: DownloadConfig = DownloadConfig()
+    network: NetworkConfig = NetworkConfig()
     ranking: dict = {}
 
 
@@ -79,5 +93,22 @@ def _get_settings_cached(path: Path | None = None) -> Settings:
     return Settings(
         env=EnvSettings(),
         download=DownloadConfig(**(raw.get("download") or {})),
+        network=NetworkConfig(**(raw.get("network") or {})),
         ranking=raw.get("ranking") or {},
     )
+
+
+def resolve_proxy() -> str | None:
+    """Return the outbound proxy to use, or ``None`` when none is configured.
+
+    Precedence: ``RETRIEVER_PROXY`` (``.env``) > ``network.proxy``
+    (``config/settings.yaml``). When both are empty this returns ``None`` so
+    httpx falls back to the ``HTTP_PROXY`` / ``HTTPS_PROXY`` environment
+    variables.
+
+    Returns:
+        A proxy URL such as ``"http://127.0.0.1:7897"``, or ``None``.
+    """
+    settings = get_settings()
+    proxy = settings.env.retriever_proxy or settings.network.proxy
+    return proxy.strip() or None

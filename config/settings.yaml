@@ -4,6 +4,12 @@ download:
   max_retries: 3
   timeout_seconds: 60
 
+network:
+  # 出站代理。本机 Clash 混合端口示例：http://127.0.0.1:7897
+  # 留空 = 交给 httpx 读取 HTTP_PROXY / HTTPS_PROXY / NO_PROXY 环境变量。
+  # .env 里的 RETRIEVER_PROXY 优先级更高（且 .env 不进版本库）。
+  proxy: ""
+
 ranking:
   weights:
     source: 0.4        # 来源可信度

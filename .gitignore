@@ -32,3 +32,7 @@ history/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Local-only scratch scripts / agent workspace
+/smoke_test.py
+.workbuddy
