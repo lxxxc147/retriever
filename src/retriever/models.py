@@ -28,6 +28,7 @@ class Filters(BaseModel):
     year_to: int | None = None
     language: str | None = None
     min_stars: int | None = None
+    categories: list[str] | None = None  # arXiv category filter, e.g. ["cs.CL"]
 
 
 class SearchQuery(BaseModel):
