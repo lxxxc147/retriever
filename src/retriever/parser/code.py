@@ -41,6 +41,8 @@ SKIP_DIRS = {
 }
 
 # Binary / generated artifacts that must not be parsed as text.
+# Note: ``Path("app.min.js").suffix`` is ".js", so minified bundles are
+# filtered by the name check in ``_is_skipped`` instead of this set.
 SKIP_SUFFIXES = {
     ".pyc",
     ".pyo",
@@ -69,7 +71,6 @@ SKIP_SUFFIXES = {
     ".ttf",
     ".pdf",
     ".lock",
-    ".min.js",
 }
 
 LANGUAGES: dict[str, str] = {
@@ -173,6 +174,8 @@ def _is_skipped(rel: Path) -> bool:
     if any(part in SKIP_DIRS for part in rel.parts[:-1]):
         return True
     if any(part.endswith(".egg-info") for part in rel.parts):
+        return True
+    if rel.name.endswith(".min.js"):  # Path.suffix only sees ".js" here
         return True
     return rel.suffix.lower() in SKIP_SUFFIXES
 
