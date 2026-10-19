@@ -7,6 +7,30 @@ import pytest
 from retriever.models import SearchQuery, SearchResult
 
 
+class _OfflineLLMClient:
+    """Unconfigured LLM client: keeps the suite offline even when ``.env`` has a key."""
+
+    model = "offline"
+    configured = False
+
+    def chat_sync(self, messages: list[dict], **kwargs: object) -> str:
+        """Fail loudly — a test that needs the model must inject a fake client."""
+        raise AssertionError("test reached the real LLM client; inject a fake one")
+
+
+@pytest.fixture(autouse=True)
+def offline_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Replace every default LLM client with an unconfigured stub (PRD §7.4).
+
+    Without this, a developer machine with ``LLM_API_KEY`` in ``.env`` would turn
+    ``--parser auto`` into a real API call from inside the unit tests.
+    """
+    factory = _OfflineLLMClient
+    for target in ("retriever.llm.LLMClient", "retriever.intent_llm.LLMClient",
+                   "retriever.cli.LLMClient"):
+        monkeypatch.setattr(target, lambda: factory(), raising=False)
+
+
 @pytest.fixture
 def sample_query() -> Callable[..., SearchQuery]:
     """Factory building a SearchQuery with sensible defaults."""

@@ -10,6 +10,20 @@ network:
   # .env 里的 RETRIEVER_PROXY 优先级更高（且 .env 不进版本库）。
   proxy: ""
 
+# Phase 2：LLM 意图解析（--parser auto|llm 时生效）。
+# API Key 只放 .env（LLM_API_KEY），绝不写在这里（PRD §3 NF7）。
+# 任何 OpenAI 兼容端点都可以：DeepSeek / Moonshot / 自建网关。
+# .env 里的 LLM_BASE_URL / LLM_MODEL 优先级高于这里的值，换供应商不用改文件。
+llm:
+  enabled: true
+  base_url: "https://api.deepseek.com/v1"
+  model: "deepseek-chat"
+  temperature: 0.0
+  max_tokens: 512
+  timeout_seconds: 30
+  max_retries: 2
+  rate_limit_qps: 2.0
+
 ranking:
   weights:
     source: 0.4        # 来源可信度

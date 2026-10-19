@@ -9,6 +9,7 @@ from __future__ import annotations
 import sys
 from typing import TextIO
 
+from .intent import ParsedIntent
 from .models import DownloadResult, SearchResult
 
 _SOURCE_LABELS = {"arxiv": "arXiv", "github": "GitHub"}
@@ -17,6 +18,52 @@ _SOURCE_LABELS = {"arxiv": "arXiv", "github": "GitHub"}
 def _source_label(source: str) -> str:
     """Human-friendly tag for a result source."""
     return _SOURCE_LABELS.get(source, source)
+
+
+def render_intent(
+    parsed: ParsedIntent,
+    source: str,
+    model: str | None = None,
+    out: TextIO | None = None,
+) -> None:
+    """Render the parsed plan so the user sees what the agent understood.
+
+    Printing the plan is what makes an LLM-parsed run verifiable at a glance:
+    the same query shows ``parser=rules`` or ``parser=llm(<model>)`` depending on
+    which parser produced it (PRD §2.7 F7.1 "关键元数据").
+
+    Args:
+        parsed: The parsed intent (intent, keywords, filter slots).
+        source: Which parser produced it — ``"llm"`` or ``"rules"``.
+        model: Model name, used in the label when the LLM parsed the query.
+        out: Output stream; ``None`` resolves to ``sys.stdout`` at call time.
+    """
+    stream = sys.stdout if out is None else out
+    parser_label = f"llm({model})" if source == "llm" and model else source
+
+    parts = [f"intent={parsed.intent}", "keywords=" + (", ".join(parsed.keywords) or "-")]
+    slots = _filter_slots(parsed)
+    if slots:
+        parts.append(" | ".join(slots))
+    parts.append(f"parser={parser_label}")
+    print("Plan: " + " | ".join(parts), file=stream)
+
+
+def _filter_slots(parsed: ParsedIntent) -> list[str]:
+    """Format the non-empty filter slots of ``parsed`` for the plan line."""
+    filters = parsed.filters
+    slots: list[str] = []
+    if filters.authors:
+        slots.append("authors=" + ",".join(filters.authors))
+    if filters.year_from is not None or filters.year_to is not None:
+        start = filters.year_from if filters.year_from is not None else "?"
+        end = filters.year_to if filters.year_to is not None else "?"
+        slots.append(f"years={start}-{end}")
+    if filters.language:
+        slots.append(f"language={filters.language}")
+    if filters.min_stars is not None:
+        slots.append(f"min_stars={filters.min_stars}")
+    return slots
 
 
 def render_results(results: list[SearchResult], out: TextIO | None = None) -> None:
