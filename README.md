@@ -33,6 +33,32 @@ uv run pytest             # 跑测试
 uv run ruff check .       # lint
 ```
 
+## 下载与历史记录
+
+**下载**统一走 `DownloadManager`（M5，PRD §2.5）：并发下载（默认 3 路）、按内容 sha256 去重、失败退避重试、失败明细写 `download_failures.log`、任务结束生成 `manifest.json`。落盘结构：
+
+```
+downloads/<task_id>/
+├── arxiv/01_Attention_Is_All_You_Need.pdf
+├── github/02_org_repo.zip
+├── download_failures.log      # 只在有失败时出现
+└── manifest.json              # task_id / query / 每条文件的 url、本地路径、大小、sha256
+```
+
+**历史记录**（X-4，PRD §2.7 F7.4）：每次 `retrieve` 结束都会往 `./history/<日期>.jsonl` 追加一条记录（查询、意图、解析器、数据源、结果数、下载成功/失败数、manifest 路径）。
+
+```bash
+$ retrieve history
+Recent 1 task(s):
+  2026-10-20 05:59  b82fe04f95c7  [paper]  transformer survey
+      1 result(s), 1 downloaded, parser=llm
+      manifest: downloads/b82fe04f95c7/manifest.json
+```
+
+- `retrieve` 不带参数等价于 `retrieve history`；
+- `--history-dir` 可改历史目录（默认 `./history`，已在 `.gitignore`）；
+- 写历史失败只打 warning，不影响检索本身。
+
 ## LLM 意图解析（Phase 2）
 
 意图解析有两套实现，输出同一个 `ParsedIntent` 契约，对下游 Router 完全透明：

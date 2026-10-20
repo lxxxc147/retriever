@@ -7,12 +7,21 @@ it with an ``io.StringIO`` and the CLI keeps its UTF-8 stdout guard.
 from __future__ import annotations
 
 import sys
+from datetime import UTC
+from pathlib import Path
 from typing import TextIO
 
+from .history import HistoryEntry
 from .intent import ParsedIntent
 from .models import DownloadResult, SearchResult
 
-_SOURCE_LABELS = {"arxiv": "arXiv", "github": "GitHub"}
+_SOURCE_LABELS = {
+    "arxiv": "arXiv",
+    "github": "GitHub",
+    "scholar": "Scholar",
+    "web": "Web",
+    "pdf": "PDF",
+}
 
 
 def _source_label(source: str) -> str:
@@ -96,25 +105,37 @@ def render_results(results: list[SearchResult], out: TextIO | None = None) -> No
             print("    " + " | ".join(summary), file=stream)
 
 
-def render_download_progress(
-    current: int,
-    total: int,
-    result: SearchResult,
+def render_download_batch(
+    count: int,
+    dest_dir: Path,
     out: TextIO | None = None,
 ) -> None:
-    """Print one download progress line, e.g. ``Downloading [1/3] <title> ...``."""
+    """Announce a concurrent download batch.
+
+    Downloads run in parallel through :class:`~retriever.downloader.DownloadManager`,
+    so per-file progress lines would interleave; one batch line plus the closing
+    summary keeps the output readable (F5.7 progress bars are Phase 2).
+
+    Args:
+        count: How many files were handed to the manager.
+        dest_dir: The per-task directory the files land in.
+        out: Output stream; ``None`` resolves to ``sys.stdout`` at call time.
+    """
     stream = sys.stdout if out is None else out
-    print(f"Downloading [{current}/{total}] {result.title} ...", file=stream)
+    print(f"Downloading {count} file(s) in parallel -> {dest_dir} ...", file=stream)
 
 
 def render_summary(
     outcomes: list[tuple[SearchResult, DownloadResult]],
+    failure_log: Path | None = None,
     out: TextIO | None = None,
 ) -> None:
     """Render the end-of-task download summary with per-item failure reasons.
 
     Args:
         outcomes: Pairs of the searched result and its download outcome.
+        failure_log: Path of ``download_failures.log`` when at least one download
+            failed and the manager wrote one (PRD F5.6).
         out: Output stream; ``None`` resolves to the current ``sys.stdout``
             at call time (so test capture fixtures keep working).
     """
@@ -128,3 +149,31 @@ def render_summary(
         print(f"  ✓ {result.title} -> {download.local_path}", file=stream)
     for result, download in failed:
         print(f"  ✗ {result.title}: {download.error or 'unknown error'}", file=stream)
+    if failed and failure_log is not None:
+        print(f"  failure details: {failure_log}", file=stream)
+
+
+def render_history(entries: list[HistoryEntry], out: TextIO | None = None) -> None:
+    """Render past tasks, newest first (PRD §2.7 F7.4).
+
+    Args:
+        entries: History entries already ordered newest first.
+        out: Output stream; ``None`` resolves to ``sys.stdout`` at call time.
+    """
+    stream = sys.stdout if out is None else out
+    if not entries:
+        print('No history yet — run `retrieve "你的查询"` first.', file=stream)
+        return
+
+    print(f"Recent {len(entries)} task(s):", file=stream)
+    for entry in entries:
+        stamp = entry.created_at.astimezone(UTC).strftime("%Y-%m-%d %H:%M")
+        print(f"  {stamp}  {entry.task_id}  [{entry.intent or '?'}]  {entry.query}", file=stream)
+        details = f"{entry.result_count} result(s), {entry.downloaded} downloaded"
+        if entry.failed:
+            details += f", {entry.failed} failed"
+        if entry.parser:
+            details += f", parser={entry.parser}"
+        print(f"      {details}", file=stream)
+        if entry.manifest_path:
+            print(f"      manifest: {entry.manifest_path}", file=stream)
