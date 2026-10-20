@@ -5,8 +5,10 @@ import httpx
 import pytest
 import respx
 
-from retriever.adapters.arxiv import ArxivAdapter, sanitize_filename
-from retriever.models import SearchQuery, SearchResult
+from retriever.adapters.arxiv import ARXIV_API_URL, ArxivAdapter, sanitize_filename
+from retriever.adapters.base import AdapterError, classify_http_error
+from retriever.http import HttpClient
+from retriever.models import Filters, SearchQuery, SearchResult
 
 MOCK_SEARCH_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
@@ -147,3 +149,98 @@ def test_sanitize_filename_truncates_and_removes_illegal():
     assert ":" not in safe
     assert "/" not in safe
     assert "\\" not in safe
+
+
+# ---------------------------------------------------------------- 失败语义与降级
+@pytest.mark.asyncio
+@respx.mock
+async def test_search_downgrades_filters_after_upstream_500():
+    """arXiv 对 "作者 + 年份" 组合返回 500 时，自动放宽条件重试并拿到结果。"""
+    adapter = ArxivAdapter(http=HttpClient(rate_limit_qps=1000.0, max_retries=1))
+    route = respx.get(ARXIV_API_URL)
+    route.side_effect = [
+        httpx.Response(500, text="internal error"),
+        httpx.Response(200, text=MOCK_SEARCH_XML),
+    ]
+    query = SearchQuery(
+        intent="paper",
+        raw_query="Vaswani 2017 attention",
+        keywords=["attention"],
+        filters=Filters(authors=["Vaswani"], year_from=2017, year_to=2017),
+    )
+
+    results = await adapter.search(query)
+
+    assert len(results) == 1
+    assert route.call_count == 2
+    first = route.calls[0].request.url.params["search_query"]
+    second = route.calls[1].request.url.params["search_query"]
+    assert "submittedDate" in first and "au:" in first
+    assert "submittedDate" not in second and "au:" in second
+    # 降级顺序：先去 submittedDate，作者条件还在；再不行才去掉作者
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_search_raises_classified_error_on_rate_limit():
+    """429 不该静默返回空列表，而是抛可读的 AdapterError(kind=rate_limit)。"""
+    adapter = ArxivAdapter(http=HttpClient(rate_limit_qps=1000.0, max_retries=1))
+    respx.get(ARXIV_API_URL).mock(return_value=httpx.Response(429))
+
+    query = SearchQuery(intent="paper", raw_query="q", keywords=["q"])
+
+    with pytest.raises(AdapterError) as excinfo:
+        await adapter.search(query)
+
+    assert excinfo.value.kind == "rate_limit"
+    assert excinfo.value.source == "arxiv"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_search_raises_classified_error_on_forbidden():
+    """403 归为 auth，提示用户去检查鉴权/反爬，而不是重试。"""
+    adapter = ArxivAdapter(http=HttpClient(rate_limit_qps=1000.0, max_retries=1))
+    respx.get(ARXIV_API_URL).mock(return_value=httpx.Response(403))
+
+    query = SearchQuery(intent="paper", raw_query="q", keywords=["q"])
+
+    with pytest.raises(AdapterError) as excinfo:
+        await adapter.search(query)
+
+    assert excinfo.value.kind == "auth"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_search_returns_empty_when_every_variant_is_empty():
+    """所有条件都成功但都没结果时才返回空列表（不是错误）。"""
+    adapter = ArxivAdapter(http=HttpClient(rate_limit_qps=1000.0, max_retries=1))
+    empty = '<feed xmlns="http://www.w3.org/2005/Atom"></feed>'
+    respx.get(ARXIV_API_URL).mock(return_value=httpx.Response(200, text=empty))
+
+    query = SearchQuery(
+        intent="paper", raw_query="q", keywords=["q"], filters=Filters(authors=["Nobody"])
+    )
+
+    assert await adapter.search(query) == []
+
+
+@pytest.mark.parametrize(
+    ("status", "kind"),
+    [(401, "auth"), (403, "auth"), (429, "rate_limit"), (404, "not_found"), (503, "network")],
+)
+def test_classify_http_status(status: int, kind: str):
+    """HTTP 状态码到失败类别的映射（CLI 用它给出可读原因）。"""
+    request = httpx.Request("GET", "https://example.org")
+    response = httpx.Response(status, request=request)
+    error = classify_http_error(
+        httpx.HTTPStatusError("boom", request=request, response=response), "arxiv"
+    )
+    assert error.kind == kind
+
+
+def test_classify_timeout_is_network():
+    """超时归为 network。"""
+    error = classify_http_error(httpx.ReadTimeout("slow"), "arxiv")
+    assert error.kind == "network"

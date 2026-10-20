@@ -16,10 +16,11 @@ from loguru import logger
 
 from ..http import HttpClient
 from ..models import DownloadResult, SearchQuery, SearchResult
-from .base import SearchAdapter
+from .base import RETRYABLE_KINDS, AdapterError, SearchAdapter, classify_http_error
 
 ATOM_NS = "{http://www.w3.org/2005/Atom}"
 ARXIV_NS = "{http://arxiv.org/schemas/atom}"
+ARXIV_API_URL = "http://export.arxiv.org/api/query"
 
 # Reuse project-standard filename sanitization logic
 _SAFE_CHARS = re.compile(r"[^0-9A-Za-z一-鿿._-]+")
@@ -58,60 +59,93 @@ class ArxivAdapter(SearchAdapter):
     async def search(self, query: SearchQuery) -> list[SearchResult]:
         """Search arXiv API and return unified SearchResult list.
 
-        Supports keyword, author, category, and submitted-date range filters.
+        过滤条件是**逐级降级**的：arXiv 对 `au:"作者" + submittedDate` 这类组合会直接
+        返回 500，或返回 0 条。遇到这种情况就自动放宽条件重试（去年份 → 去作者 →
+        只留关键词），而不是让用户拿到空结果（PRD §2.1 F1.2 / §9 风险表）。
 
         Args:
             query: Structured search task.
 
         Returns:
             List of SearchResult, capped at query.limit.
+
+        Raises:
+            AdapterError: 鉴权/限流/资源不存在这类"重试也没用"的失败，携带可读原因。
         """
-        query_parts: list[str] = []
+        last_error: AdapterError | None = None
 
-        # Keywords
-        if query.keywords:
-            keyword_str = " AND ".join(f"all:{kw}" for kw in query.keywords)
-            query_parts.append(keyword_str)
+        for label, search_query in self._query_variants(query):
+            params = {"search_query": search_query, "start": 0, "max_results": query.limit}
+            try:
+                response = await self._http.get(ARXIV_API_URL, params=params)
+            except Exception as exc:  # 先分类，再决定是否降级重试
+                error = classify_http_error(exc, self.name)
+                logger.warning("ArxivAdapter.search 失败（{}）: {}", label, error)
+                if error.kind not in RETRYABLE_KINDS:
+                    raise error from exc
+                last_error = error
+                continue
 
-        # Author filter
-        if query.filters.authors:
-            author_str = " AND ".join(f'au:"{a}"' for a in query.filters.authors)
-            query_parts.append(author_str)
+            last_error = None  # 请求成功
+            results = self._parse_xml(response.text)[: query.limit]
+            if results:
+                if label != "完整条件":
+                    logger.info("arXiv 放宽为「{}」后拿到 {} 条结果", label, len(results))
+                return results
 
-        # Category filter
-        categories = query.filters.categories if hasattr(query.filters, "categories") else None
+        if last_error is not None:
+            raise last_error
+        logger.debug("ArxivAdapter.search 返回 0 条结果")
+        return []
+
+    def _query_variants(self, query: SearchQuery) -> list[tuple[str, str]]:
+        """构造"完整 → 去年份 → 去作者 → 仅关键词"的降级查询序列。
+
+        Args:
+            query: 用户的结构化查询。
+
+        Returns:
+            ``(说明, search_query)`` 列表，顺序即降级顺序；完全相同的查询只保留一次。
+        """
+        keyword_part = [f"all:{keyword}" for keyword in query.keywords] or ["all:*"]
+        author_part = [f'au:"{author}"' for author in (query.filters.authors or [])]
+
+        categories = query.filters.categories or []
+        category_part: list[str] = []
         if categories:
-            cat_str = " OR ".join(f"cat:{c}" for c in categories)
-            query_parts.append(f"({cat_str})")
+            cat_str = " OR ".join(f"cat:{code}" for code in categories)
+            category_part = [f"({cat_str})"]
 
-        # Year range (submitted date)
+        year_part: list[str] = []
         year_from = query.filters.year_from
         year_to = query.filters.year_to
         if year_from or year_to:
             start = f"{year_from}-01-01" if year_from else "1900-01-01"
             end = f"{year_to}-12-31" if year_to else "2099-12-31"
-            query_parts.append(f"submittedDate:[{start} TO {end}]")
+            year_part = [f"submittedDate:[{start} TO {end}]"]
 
-        search_query = " AND ".join(query_parts) if query_parts else "all:*"
-
-        params = {
-            "search_query": search_query,
-            "start": 0,
-            "max_results": query.limit,
-        }
-
-        try:
-            response = await self._http.get(
-                "http://export.arxiv.org/api/query",
-                params=params,
+        variants: list[tuple[str, str]] = [
+            ("完整条件", " AND ".join([*keyword_part, *author_part, *category_part, *year_part]))
+        ]
+        if year_part:
+            variants.append(
+                ("去掉年份过滤", " AND ".join([*keyword_part, *author_part, *category_part]))
             )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("ArxivAdapter.search failed: {}", exc)
-            return []
+        if author_part:
+            variants.append(
+                ("去掉作者过滤", " AND ".join([*keyword_part, *category_part]))
+            )
+        if category_part:
+            variants.append(("仅关键词", " AND ".join(keyword_part)))
 
-        results = self._parse_xml(response.text)
-        logger.debug("ArxivAdapter.search returned {} results", len(results))
-        return results[: query.limit]
+        seen: set[str] = set()
+        unique: list[tuple[str, str]] = []
+        for label, value in variants:
+            if value in seen:
+                continue
+            seen.add(value)
+            unique.append((label, value))
+        return unique
 
     async def download(self, result: SearchResult, dest_dir: Path) -> DownloadResult:
         """Download PDF from result.download_url into dest_dir.
