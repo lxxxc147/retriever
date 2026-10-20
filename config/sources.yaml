@@ -1,14 +1,46 @@
-# 数据源注册表（Adapter registry）
-# 新增数据源 = 实现 SearchAdapter 接口（adapters/base.py）+ 在本文件注册条目。
-# 路由按 intent 选择启用的数据源，不改代码即可增删。
+# 数据源注册表（Adapter registry，PRD §2.2 F2.3）
+#
+# 新增数据源 = 实现 SearchAdapter 接口（adapters/base.py） + 在本文件加一条登记。
+# Router 启动时按本文件 import 适配器并建立 intent → 数据源 的映射，**不改框架代码**。
+#
+# 字段说明：
+#   enabled        false 时跳过（可以先登记、等 PR 合并后再打开）
+#   adapter        "包.模块:类名"，Router 会 importlib 导入并实例化
+#   rate_limit_qps 该数据源每秒最多请求数（会传给适配器的 HttpClient）
+#   intents        这个数据源负责哪些意图（paper/repo/code_file/dataset/web）；
+#                  不写则回落到 router.py 的内置表
+#
+# 注意：某个数据源 import 失败只会打 warning 并跳过，不影响其他数据源。
 arxiv:
   enabled: true
   rate_limit_qps: 1
   adapter: retriever.adapters.arxiv:ArxivAdapter
-  # Phase 2 实现（任务 A-1/A-2，成员A）
+  intents: [paper, dataset, web]
 
 github:
   enabled: true
   rate_limit_qps: 2
   adapter: retriever.adapters.github:GithubAdapter
-  # Phase 1 由成员B实现（任务 B-1/B-2/B-3）
+  intents: [repo, code_file, dataset, web]
+
+# ---------------------------------------------------------------- Phase 2 数据源
+# #22（Scholar）/ #26（Web）/ #27（PDF）已合入 main，这里直接启用；
+# 想关掉某个源只需把它改成 enabled: false，不用改代码。
+scholar:
+  enabled: true
+  rate_limit_qps: 0.2
+  adapter: retriever.adapters.scholar:ScholarAdapter
+  intents: [paper]
+
+web:
+  enabled: true
+  rate_limit_qps: 0.5
+  adapter: retriever.adapters.web:WebAdapter
+  intents: [web]
+
+pdf:
+  enabled: true
+  rate_limit_qps: 0.5
+  adapter: retriever.adapters.pdf:PdfAdapter
+  # PDF 是"文档形态"源：只在网页类检索里补一刀，不参与 paper 意图，避免噪声
+  intents: [web]
