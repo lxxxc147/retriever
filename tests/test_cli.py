@@ -62,6 +62,14 @@ def stub_router(monkeypatch: pytest.MonkeyPatch) -> dict[str, _StubAdapter]:
     return stubs
 
 
+@pytest.fixture(autouse=True)
+def isolated_history(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Keep the CLI tests' history log out of the repository working tree."""
+    directory = tmp_path_factory.mktemp("history")
+    monkeypatch.setattr("retriever.history.DEFAULT_HISTORY_DIR", directory)
+    return directory
+
+
 class _FakeLLMClient:
     """Stand-in for :class:`retriever.llm.LLMClient` — no network, canned answer."""
 
@@ -148,14 +156,14 @@ def test_main_download_writes_manifest(
     tmp_path: Path,
     capsys: pytest.CaptureFixture,
 ) -> None:
-    """``--download`` downloads every result and writes manifest.json."""
+    """``--download`` goes through the DownloadManager and writes manifest.json."""
     exit_code = cli.main(
         ["imagenet 数据集", "--download", "--out", str(tmp_path)]
     )
 
     assert exit_code == 0
     out = capsys.readouterr().out
-    assert "Downloading [1/2]" in out
+    assert "Downloading 2 file(s) in parallel" in out
     assert "2 succeeded / 0 failed" in out
 
     manifest_paths = list(tmp_path.glob("*/manifest.json"))
@@ -275,3 +283,85 @@ def test_summary_flag_uses_the_llm_when_configured(
     assert exit_code == 0
     assert "Summary: 模型生成的一句话摘要" in out
     assert len(fake.calls) == 1  # one batched call, not one per result
+
+
+# ------------------------------------------------------------------ --source
+def test_unknown_source_lists_the_registered_ones(
+    stub_router: dict[str, _StubAdapter], capsys: pytest.CaptureFixture
+) -> None:
+    """``--source`` accepts registry names and reports the valid ones on typos."""
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["transformer survey", "--source", "nope"])
+
+    assert excinfo.value.code == 2
+    err = capsys.readouterr().err
+    assert "unknown source" in err
+    assert "arxiv" in err
+    assert "github" in err
+
+
+# ------------------------------------------------------------------- history
+def test_history_is_recorded_after_a_search(
+    stub_router: dict[str, _StubAdapter],
+    isolated_history: Path,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """Every run appends one JSONL entry with the query and counters."""
+    exit_code = cli.main(["transformer survey", "--source", "arxiv"])
+
+    assert exit_code == 0
+    files = list(isolated_history.glob("*.jsonl"))
+    assert len(files) == 1
+    content = files[0].read_text(encoding="utf-8")
+    assert "transformer survey" in content
+    assert '"intent":"paper"' in content.replace(" ", "")
+
+
+def test_history_command_lists_past_tasks(
+    stub_router: dict[str, _StubAdapter], capsys: pytest.CaptureFixture
+) -> None:
+    """``retrieve history`` replays what was run before."""
+    cli.main(["transformer survey", "--source", "arxiv"])
+    capsys.readouterr()
+
+    assert cli.main(["history"]) == 0
+
+    out = capsys.readouterr().out
+    assert "Recent 1 task(s)" in out
+    assert "transformer survey" in out
+    assert "[paper]" in out
+
+
+def test_no_arguments_shows_history(
+    stub_router: dict[str, _StubAdapter], capsys: pytest.CaptureFixture
+) -> None:
+    """A bare ``retrieve`` is treated as the history listing."""
+    assert cli.main([]) == 0
+    assert "No history yet" in capsys.readouterr().out
+
+
+def test_history_records_download_outcome(
+    stub_router: dict[str, _StubAdapter], tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """The history entry carries the download counters of the run."""
+    cli.main(["imagenet 数据集", "--download", "--out", str(tmp_path)])
+    capsys.readouterr()
+
+    cli.main(["history"])
+
+    out = capsys.readouterr().out
+    assert "2 result(s), 2 downloaded" in out
+
+
+def test_history_dir_flag_overrides_the_location(
+    stub_router: dict[str, _StubAdapter], tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """``--history-dir`` writes (and reads) the log where the user asks."""
+    custom = tmp_path / "custom-history"
+    cli.main(["transformer survey", "--history-dir", str(custom)])
+    capsys.readouterr()
+
+    assert list(custom.glob("*.jsonl"))
+    assert cli.main(["history", "--history-dir", str(custom)]) == 0
+    out = capsys.readouterr().out
+    assert "Recent 1 task(s)" in out
