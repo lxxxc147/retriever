@@ -20,6 +20,8 @@ is a ``.env`` change rather than a code change::
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 from collections.abc import Sequence
 from typing import Any, Self
 
@@ -204,3 +206,50 @@ class LLMClient:
         if not isinstance(content, str):
             raise LLMError("LLM response carries no message content")
         return content
+
+
+_FENCE_RE = re.compile(r"```(?:json)?\s*(.+?)```", re.DOTALL | re.IGNORECASE)
+
+
+def extract_json_object(answer: str) -> dict:
+    """Extract the first JSON object from an LLM answer.
+
+    Models routinely wrap JSON in a ```` ```json ```` fence or surround it with
+    prose despite a "JSON only" instruction; both shapes are handled here so every
+    caller (intent parsing, summarization) shares one implementation.
+
+    Args:
+        answer: Raw model output.
+
+    Returns:
+        The decoded JSON object.
+
+    Raises:
+        ValueError: When the answer contains no decodable JSON object.
+    """
+    candidates: list[str] = []
+    fence = _FENCE_RE.search(answer)
+    if fence is not None:
+        candidates.append(fence.group(1))
+    candidates.append(answer)
+
+    for candidate in candidates:
+        found = _first_json_object(candidate)
+        if found is not None:
+            return found
+    raise ValueError("no JSON object found in the LLM answer")
+
+
+def _first_json_object(text: str) -> dict | None:
+    """Decode the first JSON object in ``text`` by scanning every ``{``."""
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            decoded, _ = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(decoded, dict):
+            return decoded
+    return None

@@ -26,8 +26,12 @@ def offline_llm(monkeypatch: pytest.MonkeyPatch) -> None:
     ``--parser auto`` into a real API call from inside the unit tests.
     """
     factory = _OfflineLLMClient
-    for target in ("retriever.llm.LLMClient", "retriever.intent_llm.LLMClient",
-                   "retriever.cli.LLMClient"):
+    for target in (
+        "retriever.llm.LLMClient",
+        "retriever.intent_llm.LLMClient",
+        "retriever.cli.LLMClient",
+        "retriever.summarizer.LLMClient",
+    ):
         monkeypatch.setattr(target, lambda: factory(), raising=False)
 
 

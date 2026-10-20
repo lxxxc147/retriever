@@ -20,8 +20,6 @@ Design contract:
 
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -29,7 +27,7 @@ from loguru import logger
 from pydantic import BaseModel, Field, ValidationError
 
 from .intent import ParsedIntent, has_source_url, parse_intent
-from .llm import LLMClient, LLMError
+from .llm import LLMClient, LLMError, extract_json_object
 from .models import Filters, Intent
 
 # Upper bound for the result count a model may request (PRD §2.1 default: 5).
@@ -85,8 +83,6 @@ _INTENT_ALIASES: dict[str, str] = {
     "网页": "web",
     "search": "web",
 }
-
-_FENCE_RE = re.compile(r"```(?:json)?\s*(.+?)```", re.DOTALL | re.IGNORECASE)
 
 MIN_YEAR = 1900
 MAX_YEAR = 2100
@@ -216,49 +212,6 @@ def build_parsed_intent(user_input: str, answer: str) -> ParsedIntent:
         raw_query=user_input,
         limit=min(MAX_LIMIT, max(1, payload.limit)),
     )
-
-
-def extract_json_object(answer: str) -> dict:
-    """Extract the first JSON object from an LLM answer.
-
-    Handles markdown fences and answers that wrap the object in prose, which are
-    the two shapes models produce most often despite the "JSON only" instruction.
-
-    Args:
-        answer: Raw model output.
-
-    Returns:
-        The decoded JSON object.
-
-    Raises:
-        ValueError: When the answer contains no decodable JSON object.
-    """
-    candidates: list[str] = []
-    fence = _FENCE_RE.search(answer)
-    if fence is not None:
-        candidates.append(fence.group(1))
-    candidates.append(answer)
-
-    for candidate in candidates:
-        found = _first_json_object(candidate)
-        if found is not None:
-            return found
-    raise ValueError("no JSON object found in the LLM answer")
-
-
-def _first_json_object(text: str) -> dict | None:
-    """Decode the first JSON object in ``text`` by scanning every ``{``."""
-    decoder = json.JSONDecoder()
-    for index, char in enumerate(text):
-        if char != "{":
-            continue
-        try:
-            decoded, _ = decoder.raw_decode(text[index:])
-        except json.JSONDecodeError:
-            continue
-        if isinstance(decoded, dict):
-            return decoded
-    return None
 
 
 def clean_keywords(keywords: list[str]) -> list[str]:
