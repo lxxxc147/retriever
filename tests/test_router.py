@@ -56,9 +56,10 @@ def _parsed(intent: str) -> ParsedIntent:
     )
 
 
-def test_route_paper_selects_arxiv_only() -> None:
+def test_route_paper_selects_paper_sources() -> None:
+    """paper 意图按 config/sources.yaml 路由：arXiv + Scholar（#22 已合入）。"""
     router = Router()
-    assert [a.name for a in router.route(_parsed("paper"))] == ["arxiv"]
+    assert [a.name for a in router.route(_parsed("paper"))] == ["arxiv", "scholar"]
 
 
 def test_route_repo_selects_github_only() -> None:
@@ -71,10 +72,11 @@ def test_route_code_file_selects_github_only() -> None:
     assert [a.name for a in router.route(_parsed("code_file"))] == ["github"]
 
 
-def test_route_dataset_and_web_select_both() -> None:
+def test_route_dataset_and_web_select_their_sources() -> None:
+    """dataset 走 arXiv+GitHub；web 另外补上 Web 与 PDF 两个形态源。"""
     router = Router()
     assert [a.name for a in router.route(_parsed("dataset"))] == ["arxiv", "github"]
-    assert [a.name for a in router.route(_parsed("web"))] == ["arxiv", "github"]
+    assert [a.name for a in router.route(_parsed("web"))] == ["arxiv", "github", "web", "pdf"]
 
 
 def test_search_all_aggregates_with_canonical_group_order() -> None:
