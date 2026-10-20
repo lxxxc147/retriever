@@ -98,6 +98,25 @@ _ZH_NOISE = (
 _TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9+\-]*|[一-鿿]+")
 
 
+# Source-URL detection used to skip the LLM for exact lookups.
+_SOURCE_URL_RE = re.compile(r"https?://(?:www\.)?(?:arxiv\.org|github\.com)/\S+", re.IGNORECASE)
+
+
+def has_source_url(text: str) -> bool:
+    """Return whether ``text`` carries an arXiv or GitHub URL.
+
+    Such queries are already unambiguous (intent + identifier), so the LLM
+    parser is skipped: exact recognition is both cheaper and more reliable.
+
+    Args:
+        text: Raw user input.
+
+    Returns:
+        ``True`` when an arXiv/GitHub URL is present.
+    """
+    return bool(_SOURCE_URL_RE.search(text or ""))
+
+
 def _extract_url_slots(user_input: str) -> tuple[str, Intent | None, list[str]]:
     """Pull source URLs out of the raw input.
 

@@ -4,8 +4,14 @@ import io
 from datetime import UTC, datetime
 from pathlib import Path
 
-from retriever.models import DownloadResult, SearchResult
-from retriever.presenter import render_download_progress, render_results, render_summary
+from retriever.intent import ParsedIntent
+from retriever.models import DownloadResult, Filters, SearchResult
+from retriever.presenter import (
+    render_download_progress,
+    render_intent,
+    render_results,
+    render_summary,
+)
 
 
 def _result(**overrides: object) -> SearchResult:
@@ -68,3 +74,45 @@ def test_render_summary_counts_success_and_failure() -> None:
     assert "Good paper" in text
     assert "Broken repo" in text
     assert "boom" in text
+
+
+def _parsed(**overrides: object) -> ParsedIntent:
+    data: dict = {
+        "intent": "paper",
+        "keywords": ["transformer"],
+        "raw_query": "q",
+        "filters": Filters(),
+    }
+    data.update(overrides)
+    return ParsedIntent(**data)  # type: ignore[arg-type]
+
+
+def test_render_intent_labels_the_llm_parser() -> None:
+    """A model-parsed plan shows the model name so the run is verifiable."""
+    out = io.StringIO()
+    render_intent(_parsed(), "llm", model="deepseek-chat", out=out)
+
+    text = out.getvalue()
+    assert text.startswith("Plan: ")
+    assert "intent=paper" in text
+    assert "keywords=transformer" in text
+    assert "parser=llm(deepseek-chat)" in text
+
+
+def test_render_intent_labels_the_rule_parser_and_slots() -> None:
+    """Filter slots are shown next to the parser that produced them."""
+    out = io.StringIO()
+    parsed = _parsed(
+        intent="repo",
+        keywords=["RAG"],
+        filters=Filters(year_from=2023, language="python", min_stars=500, authors=["Wang"]),
+    )
+    render_intent(parsed, "rules", out=out)
+
+    text = out.getvalue()
+    assert "intent=repo" in text
+    assert "authors=Wang" in text
+    assert "years=2023-?" in text
+    assert "language=python" in text
+    assert "min_stars=500" in text
+    assert "parser=rules" in text

@@ -8,10 +8,17 @@ from pathlib import Path
 
 import pytest
 
-from retriever import cli
+from retriever import cli, intent_llm
 from retriever.adapters.base import SearchAdapter
+from retriever.llm import LLMError
 from retriever.models import DownloadResult, SearchQuery, SearchResult
 from retriever.router import Router
+
+_LLM_ANSWER = (
+    '{"intent": "paper", "keywords": ["llm", "agent", "survey"], '
+    '"filters": {"authors": null, "year_from": 2024, "year_to": 2024, '
+    '"language": null, "min_stars": null, "categories": null}, "limit": 5}'
+)
 
 
 class _StubAdapter(SearchAdapter):
@@ -53,6 +60,45 @@ def stub_router(monkeypatch: pytest.MonkeyPatch) -> dict[str, _StubAdapter]:
     stubs = _stubs()
     monkeypatch.setattr(cli, "Router", lambda: Router(adapters=list(stubs.values())))
     return stubs
+
+
+class _FakeLLMClient:
+    """Stand-in for :class:`retriever.llm.LLMClient` — no network, canned answer."""
+
+    def __init__(
+        self,
+        configured: bool = True,
+        answer: str = _LLM_ANSWER,
+        error: Exception | None = None,
+    ) -> None:
+        self.configured = configured
+        self.model = "fake-model"
+        self._answer = answer
+        self._error = error
+        self.calls: list[dict] = []
+
+    def chat_sync(self, messages: list[dict], **kwargs: object) -> str:
+        self.calls.append({"messages": messages, "kwargs": kwargs})
+        if self._error is not None:
+            raise self._error
+        return self._answer
+
+
+@pytest.fixture
+def fake_llm(monkeypatch: pytest.MonkeyPatch):
+    """Install a fake LLM client wherever the CLI and the parser resolve one."""
+
+    def _install(
+        configured: bool = True,
+        answer: str = _LLM_ANSWER,
+        error: Exception | None = None,
+    ) -> _FakeLLMClient:
+        fake = _FakeLLMClient(configured=configured, answer=answer, error=error)
+        monkeypatch.setattr(cli, "LLMClient", lambda: fake)
+        monkeypatch.setattr(intent_llm, "LLMClient", lambda: fake)
+        return fake
+
+    return _install
 
 
 def test_main_search_flow_with_source_filter(stub_router: dict[str, _StubAdapter], capsys: pytest.CaptureFixture) -> None:
@@ -130,3 +176,70 @@ def test_main_no_download_flag_skips_downloads(
     out = capsys.readouterr().out
     assert "Downloading" not in out
     assert list(tmp_path.iterdir()) == []
+
+
+def test_parser_rule_flag_reports_the_rule_parser(
+    stub_router: dict[str, _StubAdapter], capsys: pytest.CaptureFixture
+) -> None:
+    """``--parser rule`` keeps the deterministic parser and says so on the plan line."""
+    exit_code = cli.main(["transformer survey", "--parser", "rule"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "parser=rules" in out
+    assert "intent=paper" in out
+    assert stub_router["arxiv"].last_query is not None
+
+
+def test_parser_llm_without_a_key_is_a_usage_error(
+    stub_router: dict[str, _StubAdapter],
+    fake_llm,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """``--parser llm`` with no key fails loudly instead of silently using rules."""
+    fake_llm(configured=False)
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["transformer survey", "--parser", "llm"])
+
+    assert excinfo.value.code == 2
+    assert "LLM_API_KEY" in capsys.readouterr().err
+
+
+def test_auto_parser_uses_the_llm_when_configured(
+    stub_router: dict[str, _StubAdapter],
+    fake_llm,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """With a key present, auto mode takes the model's keywords and filter slots."""
+    fake = fake_llm()
+
+    exit_code = cli.main(["帮我找 llm agent 的论文"])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "parser=llm(fake-model)" in out
+    assert len(fake.calls) == 1
+    query = stub_router["arxiv"].last_query
+    assert query is not None
+    # The rule parser would yield ["llm", "agent"]; these come from the model answer.
+    assert query.keywords == ["llm", "agent", "survey"]
+    assert query.filters.year_from == 2024
+
+
+def test_llm_failure_falls_back_to_rules_with_a_warning(
+    stub_router: dict[str, _StubAdapter],
+    fake_llm,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """A dead model endpoint degrades to the rules and warns — the run still completes."""
+    fake_llm(error=LLMError("connection refused"))
+
+    exit_code = cli.main(["transformer survey"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "warning:" in captured.err
+    assert "connection refused" in captured.err
+    assert "parser=rules" in captured.out
+    assert stub_router["arxiv"].last_query is not None

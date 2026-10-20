@@ -1,8 +1,13 @@
 """CLI entry point — ``retrieve "query"`` (argparse).
 
-Phase 1 main-line wiring: parse intent (rules) → route via :class:`Router`
-→ render results → optional ``--download`` of the results into
-``--out/<task_id>/`` with a ``manifest.json`` summary (PRD §2.8).
+Phase 1 main-line wiring: parse intent → route via :class:`Router` → render
+results → optional ``--download`` of the results into ``--out/<task_id>/`` with
+a ``manifest.json`` summary (PRD §2.8).
+
+The intent stage is pluggable (``--parser``): ``auto`` uses the LLM when an API
+key is configured and the deterministic rule parser otherwise, ``rule`` forces
+the rules, ``llm`` forces the model. Either way a parse failure falls back to the
+rules, so the CLI never dies because a model endpoint is unavailable.
 
 The console-script entry point is ``app`` (pyproject ``[project.scripts]``
 points at ``retriever.cli:app``); :func:`main` accepts an explicit argv list
@@ -23,9 +28,10 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .intent import parse_intent
+from .intent_llm import parse_intent_auto
+from .llm import LLMClient
 from .models import DownloadResult, Manifest, ManifestFile, SearchQuery, SearchResult
-from .presenter import render_download_progress, render_results, render_summary
+from .presenter import render_download_progress, render_intent, render_results, render_summary
 from .router import Router
 
 # Windows consoles default to GBK; force UTF-8 so CJK/emoji output works.
@@ -77,6 +83,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Download root directory (default: ./downloads).",
     )
     parser.add_argument(
+        "--parser",
+        choices=["auto", "rule", "llm"],
+        default="auto",
+        help=(
+            "Intent parser: 'auto' uses the LLM when an API key is configured, "
+            "'rule' forces the deterministic regex/dictionary parser, "
+            "'llm' forces the model (falls back to the rules on failure). "
+            "Default: auto."
+        ),
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"%(prog)s {__version__}",
@@ -96,8 +113,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    parsed = parse_intent(args.query)
+    if args.parser == "llm" and not LLMClient().configured:
+        parser.error("--parser llm requires an LLM API key; set LLM_API_KEY in .env")
+
+    outcome = parse_intent_auto(args.query, mode=args.parser)
+    if outcome.fallback:
+        print(f"warning: {outcome.note} — using the rule parser", file=sys.stderr)
+    parsed = outcome.parsed
     parsed.limit = max(1, args.limit)
+    render_intent(parsed, outcome.source, model=outcome.note if outcome.source == "llm" else None)
 
     router = Router()
     if args.source == "all":

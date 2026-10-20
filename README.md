@@ -28,10 +28,48 @@ RETRIEVER_PROXY=http://127.0.0.1:7897   # 本机 Clash 混合端口
 ## 快速开始
 
 ```bash
-uv run retrieve --help    # 查看 CLI（当前为 W1 骨架，Phase 1 末接入完整命令）
+uv run retrieve --help    # 查看 CLI
 uv run pytest             # 跑测试
 uv run ruff check .       # lint
 ```
+
+## LLM 意图解析（Phase 2）
+
+意图解析有两套实现，输出同一个 `ParsedIntent` 契约，对下游 Router 完全透明：
+
+| 解析器 | 实现 | 成本 | 触发方式 |
+|---|---|---|---|
+| 规则版 | `intent.py`（正则 + 词典，PRD X-1） | 零成本、可复现 | `--parser rule`，或没配 Key 时的 `auto` |
+| LLM 版 | `intent_llm.py` + `llm.py`（OpenAI 兼容 `/chat/completions`） | 一次模型调用 | `--parser llm`，或配了 Key 时的 `auto` |
+
+```bash
+retrieve "帮我找 2023 年以后 RAG 相关的 github 项目，stars 超过 500"   # auto：有 Key 走 LLM
+retrieve "transformer survey" --parser rule                        # 强制规则版（离线、零成本）
+retrieve "llm agent 综述" --parser llm                             # 强制 LLM 版
+```
+
+解析结果会在结果列表前打印一行 `Plan: ...parser=llm(deepseek-chat)`，方便确认这一次到底走了哪条路径。
+
+**配置**（`.env`，不进版本库）：
+
+```bash
+LLM_API_KEY=sk-...                                  # 必填；也接受 DEEPSEEK_API_KEY
+LLM_BASE_URL=https://api.deepseek.com/v1            # 可选，覆盖 settings.yaml 的 llm.base_url
+LLM_MODEL=deepseek-chat                             # 可选，覆盖 llm.model
+```
+
+端点与模型默认值在 `config/settings.yaml` 的 `llm:` 段，任何 OpenAI 兼容端点（DeepSeek / Moonshot / 自建网关）都能直接换上。
+
+**降级策略**（PRD §3 NF2，单点故障不影响主流程）：
+
+| 情况 | 行为 |
+|---|---|
+| 没配 Key | `auto` 直接用规则版，不报警告 |
+| 模型超时 / HTTP 错误 / Key 无效 | 规则版兜底，stderr 打一行 `warning:`，检索照常跑完 |
+| 返回非法 JSON、意图取值越界、关键词为空 | 同上，规则版兜底 |
+| 查询本身是 arXiv/GitHub URL | `auto` 不调用模型（URL 已精确，省一次 token） |
+
+**测试**：LLM 相关单测全部用 `respx` mock（`tests/test_llm.py`）或注入假客户端（`tests/test_intent_llm.py`、`tests/test_cli.py`），`tests/conftest.py` 里还有一个 autouse fixture 把默认 LLM 客户端替换成未配置桩，保证本地 `.env` 里有 Key 时跑测试也不会真的打网络。
 
 ## 目录结构
 
@@ -40,15 +78,17 @@ retrieval-agent/
 ├── pyproject.toml
 ├── .env.example            # 配置模板（含注释说明）
 ├── config/
-│   ├── settings.yaml       # 限流、权重、路径等配置
+│   ├── settings.yaml       # 限流、权重、路径、LLM 端点等配置
 │   └── sources.yaml        # 数据源注册表
 ├── src/
 │   └── retriever/
 │       ├── __init__.py
-│       ├── cli.py          # CLI 入口（typer）
+│       ├── cli.py          # CLI 入口（argparse）
 │       ├── models.py       # SearchQuery / SearchResult / Manifest 数据模型
 │       ├── config.py       # 配置加载
-│       ├── intent.py       # M1 需求解析
+│       ├── intent.py       # M1 需求解析（规则版）
+│       ├── intent_llm.py   # M1 需求解析（LLM 版 + 规则兜底）
+│       ├── llm.py          # LLM 客户端（OpenAI 兼容，走 HttpClient）
 │       ├── router.py       # M2 路由调度
 │       ├── pipeline.py     # M4 结果处理流水线
 │       ├── downloader.py   # M5 下载管理
