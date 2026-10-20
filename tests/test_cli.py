@@ -365,3 +365,77 @@ def test_history_dir_flag_overrides_the_location(
     assert cli.main(["history", "--history-dir", str(custom)]) == 0
     out = capsys.readouterr().out
     assert "Recent 1 task(s)" in out
+
+
+# ------------------------------------------------------------------ PDF 解析（M6）
+def test_parse_flag_writes_structured_json(
+    stub_router: dict[str, _StubAdapter],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """``--parse`` turns downloaded PDFs into JSON under parsed/<date>/<task>/."""
+    pdf_result = SearchResult(source="arxiv", title="Paper A", url="https://arxiv.org/abs/2401.00001")
+
+    def _fake_download(result: SearchResult, dest_dir: Path) -> DownloadResult:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        path = dest_dir / f"{result.title}.pdf"
+        path.write_bytes(b"%PDF-1.4 fake")
+        return DownloadResult(success=True, local_path=path, size_bytes=10, sha256="x")
+
+    class _PdfStub(_StubAdapter):
+        async def download(self, result: SearchResult, dest_dir: Path) -> DownloadResult:
+            return _fake_download(result, dest_dir)
+
+    stubs = {"arxiv": _PdfStub("arxiv", [pdf_result])}
+    monkeypatch.setattr(cli, "Router", lambda: Router(adapters=list(stubs.values())))
+    monkeypatch.setattr(
+        cli, "_resolve_pdf_parser",
+        lambda: lambda path: {"meta": {"title": path.stem}, "content": {"body": "x"}},
+    )
+
+    exit_code = cli.main([
+        "transformer survey", "--source", "arxiv", "--download", "--parse",
+        "--out", str(tmp_path / "downloads"), "--parsed-dir", str(tmp_path / "parsed"),
+    ])
+
+    out = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Parsed 1 PDF file(s)" in out
+    written = list((tmp_path / "parsed").rglob("*.json"))
+    assert len(written) == 1
+    assert "Paper_A" in written[0].read_text(encoding="utf-8")  # 下载器会安全化文件名
+
+
+def test_parse_flag_degrades_when_pymupdf_is_missing(
+    stub_router: dict[str, _StubAdapter], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """没有 pymupdf 时 --parse 只提示并跳过，不影响下载本身。"""
+    monkeypatch.setattr(cli, "_resolve_pdf_parser", lambda: None)
+
+    exit_code = cli.main([
+        "transformer survey", "--source", "arxiv", "--download", "--parse",
+        "--out", str(tmp_path / "downloads"), "--parsed-dir", str(tmp_path / "parsed"),
+    ])
+
+    assert exit_code == 0
+    assert "Parsed" not in capsys.readouterr().out
+
+
+def test_parse_skips_non_pdf_downloads(
+    stub_router: dict[str, _StubAdapter], tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """``.bin``（stub 下载的产物）不是 PDF，不该被送去解析。"""
+    called: list[Path] = []
+    monkeypatch.setattr(cli, "_resolve_pdf_parser", lambda: lambda path: called.append(path) or {})
+
+    exit_code = cli.main([
+        "transformer survey", "--source", "arxiv", "--download", "--parse",
+        "--out", str(tmp_path / "downloads"), "--parsed-dir", str(tmp_path / "parsed"),
+    ])
+
+    assert exit_code == 0
+    assert called == []
+    assert "Parsed" not in capsys.readouterr().out

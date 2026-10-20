@@ -59,6 +59,36 @@ Recent 1 task(s):
 - `--history-dir` 可改历史目录（默认 `./history`，已在 `.gitignore`）；
 - 写历史失败只打 warning，不影响检索本身。
 
+## PDF 解析（M6）
+
+下载完成后可以把 PDF 解析成结构化 JSON（产物在 `parsed/<日期>/<task_id>/<文件名>.json`，便于溯源与后续问答）：
+
+```bash
+retrieve "transformer survey" --source arxiv --limit 1 --download --parse
+# Parsed 1 PDF file(s) -> parsed (0 failed).
+```
+
+输出结构：
+
+```json
+{
+  "meta": {
+    "title": "A Survey on ...",
+    "page_count": 11,
+    "word_count": 3400,
+    "sha256": "d5672fa5...",
+    "parse_quality": "normal",
+    "file_name": "01_A_Survey_on.pdf"
+  },
+  "content": {"body": "正文……", "references": ["[1] Zhang S. ...", "[2] Li M. ..."]}
+}
+```
+
+- `parse_quality` 为 `normal` 或 `scan`：扫描版没有文本层，只标记不报错（PRD §9 风险表）；
+- 标题优先级：PDF 元数据 > 页面最大字号文本 > 文件名；
+- 解析是**可选能力**：`pymupdf` 无法加载时 `--parse` 只提示并跳过，不影响检索与下载；
+- 只解析 `.pdf` 产物（GitHub 的 ZIP、网页的 Markdown 会跳过）。
+
 ## LLM 意图解析（Phase 2）
 
 意图解析有两套实现，输出同一个 `ParsedIntent` 契约，对下游 Router 完全透明：
