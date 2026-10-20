@@ -24,8 +24,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import inspect
+import json
 import sys
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -112,6 +114,20 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help=f"History directory (default: {DEFAULT_HISTORY_DIR}).",
+    )
+    parser.add_argument(
+        "--parse",
+        action="store_true",
+        help=(
+            "Parse downloaded PDFs into structured JSON under --parsed-dir "
+            "(M6, F6.1/F6.4). Needs the optional pymupdf dependency."
+        ),
+    )
+    parser.add_argument(
+        "--parsed-dir",
+        type=Path,
+        default=Path("./parsed"),
+        help="Root directory for parsed documents (default: ./parsed).",
     )
     parser.add_argument(
         "--parser",
@@ -216,6 +232,11 @@ def main(argv: list[str] | None = None) -> int:
         if written.exists():
             manifest_path = written
             print(f"Manifest written to {written}")
+
+        if args.parse and downloaded:
+            ok, bad = _parse_downloads(outcomes, args.parsed_dir, task_id)
+            if ok or bad:
+                print(f"Parsed {ok} PDF file(s) -> {args.parsed_dir} ({bad} failed).")
     elif args.download:
         print("Nothing to download (no results).")
 
@@ -267,6 +288,64 @@ def _show_history(history_dir: Path | None, limit: int) -> int:
     entries = load_history(history_dir, max(1, limit))
     render_history(entries)
     return 0
+
+
+def _resolve_pdf_parser() -> Any:
+    """Return :func:`retriever.parser.pdf.parse_pdf`, or ``None`` when unavailable.
+
+    ``pymupdf`` ships native binaries, so importing it can fail on a machine where
+    the wheel cannot load its DLL. The parser is therefore an *optional* runtime
+    extra: ``--parse`` degrades with a note instead of crashing the run.
+    """
+    try:
+        from .parser.pdf import parse_pdf
+    except Exception as exc:  # noqa: BLE001 — 可选依赖缺失不该炸掉检索
+        print(f"note: PDF parsing unavailable ({exc}); --parse skipped", file=sys.stderr)
+        return None
+    return parse_pdf
+
+
+def _parse_downloads(
+    outcomes: list[tuple[SearchResult, Any]],
+    parsed_root: Path,
+    task_id: str,
+) -> tuple[int, int]:
+    """Parse every downloaded PDF into structured JSON (M6, F6.4).
+
+    Output layout mirrors ``parsed/<date>/<task_id>/<file>.json`` so the artefacts
+    stay traceable to the task that produced them.
+
+    Args:
+        outcomes: ``(result, DownloadResult)`` pairs from the download stage.
+        parsed_root: Root ``parsed/`` directory.
+        task_id: Task id, used as the per-run sub-directory.
+
+    Returns:
+        ``(parsed_count, failed_count)``.
+    """
+    parse_pdf = _resolve_pdf_parser()
+    if parse_pdf is None:
+        return 0, 0
+
+    target_dir = Path(parsed_root) / datetime.now(UTC).date().isoformat() / task_id
+    parsed_count = failed_count = 0
+    for _result, download in outcomes:
+        path = download.local_path
+        if not download.success or path is None or Path(path).suffix.lower() != ".pdf":
+            continue
+        try:
+            document = parse_pdf(Path(path))
+        except Exception as exc:  # noqa: BLE001 — 单个坏文件不影响其他文件
+            failed_count += 1
+            print(f"warning: cannot parse {path}: {exc}", file=sys.stderr)
+            continue
+        target_dir.mkdir(parents=True, exist_ok=True)
+        out_path = target_dir / f"{Path(path).stem}.json"
+        out_path.write_text(
+            json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        parsed_count += 1
+    return parsed_count, failed_count
 
 
 # pyproject [project.scripts] points the ``retrieve`` command at this symbol.
