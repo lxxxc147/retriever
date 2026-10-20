@@ -243,3 +243,35 @@ def test_llm_failure_falls_back_to_rules_with_a_warning(
     assert "connection refused" in captured.err
     assert "parser=rules" in captured.out
     assert stub_router["arxiv"].last_query is not None
+
+
+def test_summary_flag_renders_extractive_summaries(
+    stub_router: dict[str, _StubAdapter],
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """``--summary`` without a key still adds summaries and says so on stderr."""
+    exit_code = cli.main(["transformer survey", "--summary", "--source", "arxiv"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "Summary:" in captured.out
+    assert "extractive summaries" in captured.err
+
+
+def test_summary_flag_uses_the_llm_when_configured(
+    stub_router: dict[str, _StubAdapter],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """With a key configured the LLM summaries are rendered instead."""
+    fake = _FakeLLMClient(
+        answer='{"items": [{"i": 1, "s": "模型生成的一句话摘要"}, {"i": 2, "s": "第二条"}]}'
+    )
+    monkeypatch.setattr("retriever.summarizer.LLMClient", lambda: fake)
+
+    exit_code = cli.main(["transformer survey", "--summary"])
+
+    out = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Summary: 模型生成的一句话摘要" in out
+    assert len(fake.calls) == 1  # one batched call, not one per result

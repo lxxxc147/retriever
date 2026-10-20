@@ -31,8 +31,10 @@ from . import __version__
 from .intent_llm import parse_intent_auto
 from .llm import LLMClient
 from .models import DownloadResult, Manifest, ManifestFile, SearchQuery, SearchResult
+from .pipeline import run_pipeline
 from .presenter import render_download_progress, render_intent, render_results, render_summary
 from .router import Router
+from .summarizer import LLMSummarizer
 
 # Windows consoles default to GBK; force UTF-8 so CJK/emoji output works.
 if hasattr(sys.stdout, "reconfigure"):
@@ -94,6 +96,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--summary",
+        action="store_true",
+        help=(
+            "Add a one-sentence Chinese summary per result (F4.3). Uses the LLM "
+            "when an API key is configured and falls back to extractive summaries."
+        ),
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"%(prog)s {__version__}",
@@ -139,6 +149,17 @@ def main(argv: list[str] | None = None) -> int:
         limit=parsed.limit,
     )
     results = router.search_all(query, adapters=adapters)
+
+    summarizer = None
+    if args.summary:
+        summarizer = LLMSummarizer()
+        if not summarizer.configured:
+            print(
+                "note: no LLM API key configured — using extractive summaries",
+                file=sys.stderr,
+            )
+    # M4: cross-source dedupe + weighted ranking (+ optional summaries).
+    results = run_pipeline(results, summarizer=summarizer)
     render_results(results)
 
     if not args.download:

@@ -52,6 +52,20 @@ def test_render_results_empty_shows_friendly_message() -> None:
     assert "No results found" in out.getvalue()
 
 
+def test_render_results_shows_the_pipeline_summary() -> None:
+    """A result carrying ``extra["summary"]`` renders it under the URL."""
+    out = io.StringIO()
+    render_results([_result(extra={"summary": "一篇讲注意力的论文"})], out=out)
+    assert "Summary: 一篇讲注意力的论文" in out.getvalue()
+
+
+def test_render_results_without_summary_renders_no_summary_line() -> None:
+    """Results that never went through the summarizer show no empty Summary line."""
+    out = io.StringIO()
+    render_results([_result()], out=out)
+    assert "Summary:" not in out.getvalue()
+
+
 def test_render_download_progress_line() -> None:
     out = io.StringIO()
     render_download_progress(1, 3, _result(title="Paper A"), out=out)

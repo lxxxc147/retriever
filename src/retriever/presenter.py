@@ -84,6 +84,9 @@ def render_results(results: list[SearchResult], out: TextIO | None = None) -> No
     for index, result in enumerate(results, start=1):
         print(f"[{index}] [{_source_label(result.source)}] {result.title}", file=stream)
         print(f"    URL: {result.url}", file=stream)
+        summary_line = str(result.extra.get("summary") or "").strip()
+        if summary_line:
+            print(f"    Summary: {summary_line}", file=stream)
         summary: list[str] = []
         if result.authors:
             summary.append("Authors: " + ", ".join(result.authors[:5]))

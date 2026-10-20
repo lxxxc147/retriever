@@ -24,11 +24,15 @@ llm:
   max_retries: 2
   rate_limit_qps: 2.0
 
+# M4 结果处理的排序权重（PRD §2.4 F4.2）。改这里即可调排序，不用改代码。
+# source     = 来源可信度：arxiv 1.0 / scholar 0.95 / github 0.9 / pdf 0.7 / web 0.6
+# recency    = 时效性：按年指数衰减，5 年半衰期
+# popularity = 热度：log1p(引用数或 stars)/log1p(1000)，封顶 1.0
 ranking:
   weights:
-    source: 0.4        # 来源可信度
-    recency: 0.3       # 时效性（按年份衰减）
-    popularity: 0.3    # 引用数/stars 对数归一
+    source: 0.4
+    recency: 0.3
+    popularity: 0.3
 
 sources:
   arxiv:

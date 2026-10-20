@@ -169,6 +169,35 @@ def resolve_llm_api_key() -> str:
     return (env.llm_api_key or env.deepseek_api_key).strip()
 
 
+DEFAULT_RANKING_WEIGHTS: dict[str, float] = {
+    "source": 0.4,
+    "recency": 0.3,
+    "popularity": 0.3,
+}
+
+
+def resolve_ranking_weights() -> dict[str, float]:
+    """Return the M4 ranking weights from ``ranking.weights`` (PRD §10.2).
+
+    Missing, unparsable or negative values fall back to
+    :data:`DEFAULT_RANKING_WEIGHTS`, so a hand-edited settings file can never
+    crash a search run (PRD §3 NF4).
+
+    Returns:
+        ``{"source": float, "recency": float, "popularity": float}``.
+    """
+    raw = (get_settings().ranking or {}).get("weights") or {}
+    weights = dict(DEFAULT_RANKING_WEIGHTS)
+    for name, default in DEFAULT_RANKING_WEIGHTS.items():
+        try:
+            value = float(raw.get(name, default))
+        except (TypeError, ValueError):
+            continue
+        if value >= 0:
+            weights[name] = value
+    return weights
+
+
 def resolve_proxy() -> str | None:
     """Return the outbound proxy to use, or ``None`` when none is configured.
 

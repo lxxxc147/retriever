@@ -71,6 +71,41 @@ LLM_MODEL=deepseek-chat                             # 可选，覆盖 llm.model
 
 **测试**：LLM 相关单测全部用 `respx` mock（`tests/test_llm.py`）或注入假客户端（`tests/test_intent_llm.py`、`tests/test_cli.py`），`tests/conftest.py` 里还有一个 autouse fixture 把默认 LLM 客户端替换成未配置桩，保证本地 `.env` 里有 Key 时跑测试也不会真的打网络。
 
+## 结果处理（M4 Pipeline）
+
+检索结果在展示前统一过一遍 `pipeline.run_pipeline()`（PRD §2.4）：
+
+| 步骤 | 做什么 | 配置 |
+|---|---|---|
+| 去重（F4.1） | 按 arXiv ID / DOI / GitHub `owner/repo` / 归一化 URL 判定同一结果，跨源重复只留一条，缺失的摘要/作者/日期/元数据从重复项补齐 | 无需配置 |
+| 排序（F4.2） | 加权求和：来源可信度 + 时效性（按年指数衰减）+ 热度（引用数/stars 取对数归一） | `config/settings.yaml` 的 `ranking.weights` |
+| 摘要（F4.3） | 每条结果一句话中文摘要 | `--summary` 开启 |
+
+```bash
+retrieve "RAG 数据集" --limit 3 --summary
+```
+
+```
+Plan: intent=dataset | keywords=RAG | parser=llm(deepseek-flash)
+Found 6 result(s):
+
+[1] [GitHub] langgenius/dify
+    URL: https://github.com/langgenius/dify
+    Summary: Dify 是构建 Agent 工作流与 RAG 流水线的协作平台，支持云端或自托管部署。
+```
+
+摘要默认**一次批量调用**（不是每条一次），没有 Key 或调用失败时自动降级为"摘要首句 + 截断"的抽取式摘要，并在 stderr 提示一次。
+
+排序权重可现场调，改完不用改代码：
+
+```yaml
+ranking:
+  weights:
+    source: 0.4        # 来源可信度：arxiv 1.0 / scholar 0.95 / github 0.9 / pdf 0.7 / web 0.6
+    recency: 0.3       # 时效性：5 年半衰期
+    popularity: 0.3    # 引用数或 stars：log1p(value)/log1p(1000)，封顶 1.0
+```
+
 ## 目录结构
 
 ```
@@ -90,7 +125,8 @@ retrieval-agent/
 │       ├── intent_llm.py   # M1 需求解析（LLM 版 + 规则兜底）
 │       ├── llm.py          # LLM 客户端（OpenAI 兼容，走 HttpClient）
 │       ├── router.py       # M2 路由调度
-│       ├── pipeline.py     # M4 结果处理流水线
+│       ├── pipeline.py     # M4 结果处理流水线（去重/加权排序/摘要装配）
+│       ├── summarizer.py   # M4 一句话摘要（LLM 批量 + 抽取式兜底）
 │       ├── downloader.py   # M5 下载管理
 │       ├── parser/         # M6 内容解析
 │       │   ├── pdf.py
