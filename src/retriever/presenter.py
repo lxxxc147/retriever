@@ -153,6 +153,71 @@ def render_summary(
         print(f"  failure details: {failure_log}", file=stream)
 
 
+def render_interactive_welcome(out: TextIO | None = None) -> None:
+    """Open an interactive session (F8.2) and point at the help command.
+
+    Args:
+        out: Output stream; ``None`` resolves to the current ``sys.stdout``.
+    """
+    stream = sys.stdout if out is None else out
+    print("Retriever 交互模式 — 输入检索内容开始，输入 help 查看命令，q 退出。", file=stream)
+
+
+def render_interactive_help(out: TextIO | None = None) -> None:
+    """List the interactive commands (F8.2).
+
+    Args:
+        out: Output stream; ``None`` resolves to the current ``sys.stdout``.
+    """
+    stream = sys.stdout if out is None else out
+    print(
+        """可用命令：
+  <检索内容>     发起检索（会话第一轮）
+  <自然语言>     基于当前结果继续 refine（F7.3），如“只要 2024 年以后的”
+  <序号>         查看第 N 条结果详情（如 2）
+  d              下载当前全部结果
+  d N            下载第 N 条结果（如 d 2）
+  help / ?       显示本帮助
+  q / quit       退出交互模式""",
+        file=stream,
+    )
+
+
+def render_refine_prompt(out: TextIO | None = None) -> None:
+    """Print the one-line follow-up hint shown after every result page (F7.2).
+
+    Args:
+        out: Output stream; ``None`` resolves to the current ``sys.stdout``.
+    """
+    stream = sys.stdout if out is None else out
+    print(
+        "— 继续输入可 refine 结果；d 下载全部、d N 下载第 N 条、N 看详情、help 帮助、q 退出",
+        file=stream,
+    )
+
+
+def render_detail(result: SearchResult, index: int, out: TextIO | None = None) -> None:
+    """Render one result in full (interactive detail view).
+
+    Args:
+        result: The result to expand.
+        index: Its 1-based position in the current list.
+        out: Output stream; ``None`` resolves to the current ``sys.stdout``.
+    """
+    stream = sys.stdout if out is None else out
+    print(f"[{index}] [{_source_label(result.source)}] {result.title}", file=stream)
+    print(f"    URL: {result.url}", file=stream)
+    if result.download_url:
+        print(f"    Download: {result.download_url}", file=stream)
+    if result.authors:
+        print("    Authors: " + ", ".join(result.authors), file=stream)
+    if result.published_at is not None:
+        print("    Published: " + result.published_at.date().isoformat(), file=stream)
+    if result.abstract:
+        print(file=stream)
+        print("    " + result.abstract.replace("\n", " "), file=stream)
+
+
 def render_history(entries: list[HistoryEntry], out: TextIO | None = None) -> None:
     """Render past tasks, newest first (PRD §2.7 F7.4).
 

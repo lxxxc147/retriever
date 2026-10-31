@@ -55,9 +55,34 @@ Recent 1 task(s):
       manifest: downloads/b82fe04f95c7/manifest.json
 ```
 
-- `retrieve` 不带参数等价于 `retrieve history`；
+- `retrieve` 不带参数进入交互模式（见下节）；`retrieve history` 专门用来回看历史；
 - `--history-dir` 可改历史目录（默认 `./history`，已在 `.gitignore`）；
 - 写历史失败只打 warning，不影响检索本身。
+
+## 交互模式（F8.2 / F7.3）
+
+不带参数运行 `retrieve`（或加 `-i/--interactive`）进入交互会话：首轮输入检索内容后，可以继续用自然语言收窄结果，并直接选择下载——不用再拼一整条命令：
+
+```text
+$ retrieve
+Retriever 交互模式 — 输入检索内容开始，输入 help 查看命令，q 退出。
+retrieve> transformer survey
+Plan: intent=paper | keywords=transformer | parser=rules
+Found 5 result(s):
+...
+— 继续输入可 refine 结果；d 下载全部、d N 下载第 N 条、N 看详情、help 帮助、q 退出
+retrieve> 只要 2024 年的
+Plan: intent=paper | keywords=transformer | parser=rules | years=2024-2024
+Found 2 result(s):
+...
+retrieve> d 2
+Downloading 1 file(s) in parallel -> downloads/<task_id> ...
+retrieve> q
+```
+
+- 自然语言 refine 先对当前结果做本地过滤（年份、stars、语言、作者、分类、关键词）；过滤后为空时自动把条件合并进检索式重新搜索，不会悄悄返回空列表；
+- `d N` 下载第 N 条（编号以当前列表为准）、`N` 查看详情；
+- 每一轮 refine 和每一次下载都会记一条历史。
 
 ## PDF 解析（M6）
 
