@@ -332,12 +332,13 @@ def test_history_command_lists_past_tasks(
     assert "[paper]" in out
 
 
-def test_no_arguments_shows_history(
+def test_no_arguments_enters_interactive_mode(
     stub_router: dict[str, _StubAdapter], capsys: pytest.CaptureFixture
 ) -> None:
-    """A bare ``retrieve`` is treated as the history listing."""
+    """A bare ``retrieve`` opens the interactive loop (F8.2); EOF ends it cleanly."""
     assert cli.main([]) == 0
-    assert "No history yet" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "交互模式" in out
 
 
 def test_history_records_download_outcome(
