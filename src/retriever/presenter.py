@@ -14,6 +14,7 @@ from typing import TextIO
 from .history import HistoryEntry
 from .intent import ParsedIntent
 from .models import DownloadResult, SearchResult
+from .qa import Answer
 
 _SOURCE_LABELS = {
     "arxiv": "arXiv",
@@ -216,6 +217,35 @@ def render_detail(result: SearchResult, index: int, out: TextIO | None = None) -
     if result.abstract:
         print(file=stream)
         print("    " + result.abstract.replace("\n", " "), file=stream)
+
+
+def render_answer(
+    answer: Answer,
+    *,
+    model: str | None = None,
+    out: TextIO | None = None,
+) -> None:
+    """Render a QA answer with its supporting documents (M8).
+
+    Args:
+        answer: The :class:`~retriever.qa.Answer` to present.
+        model: Model name when the answer came from the LLM (else extractive).
+        out: Output stream; ``None`` resolves to the current ``sys.stdout``.
+    """
+    stream = sys.stdout if out is None else out
+    if not answer.citations:
+        print("没有找到与问题相关的已解析文档。", file=stream)
+        return
+    if not answer.text:
+        print("相关文档不足以生成答案（见下方来源，可换关键词再问）。", file=stream)
+    else:
+        source = f"（由 {model} 生成）" if model else "（抽取自原文）"
+        print(f"Answer {source}:", file=stream)
+        print("  " + answer.text, file=stream)
+    print("\nSources:", file=stream)
+    for index, citation in enumerate(answer.citations, start=1):
+        print(f"  [{index}] {citation.doc.title} (task {citation.doc.task_id})", file=stream)
+        print(f"      {citation.doc.path}", file=stream)
 
 
 def render_history(entries: list[HistoryEntry], out: TextIO | None = None) -> None:
