@@ -114,6 +114,24 @@ retrieve "transformer survey" --source arxiv --limit 1 --download --parse
 - 解析是**可选能力**：`pymupdf` 无法加载时 `--parse` 只提示并跳过，不影响检索与下载；
 - 只解析 `.pdf` 产物（GitHub 的 ZIP、网页的 Markdown 会跳过）。
 
+## 本地问答（M8，Phase 4）
+
+对已下载并解析的文档直接提问，检索产物变成可追问的知识库（PRD §2.9）：
+
+```bash
+retrieve --ask "what problem does the attention mechanism solve"
+# Answer（抽取自原文）:
+#   existing attention mechanism, bridging ... We propose the Contextualized ...
+#
+# Sources:
+#   [1] Déjà vu: A Contextualized Temporal Attention ... (task 88ebeb440500)
+```
+
+- 配置了 `LLM_API_KEY` 时由模型基于 top-3 相关片段生成回答；没有 key 或模型失败时退化为**抽取式**（挑出命中问题术语最多的原句），问答永远可用；
+- `--task <task_id>` 限定某个检索任务的解析结果（task_id 见下载目录名或 `retrieve history`）；
+- 相关性是词汇重叠（英文词 + 中文 bigram）：中文问题问英文论文时，优先用论文里的英文术语提问；
+- 没有任何命中时会明确说明并退出码 1，不编造答案。
+
 ## LLM 意图解析（Phase 2）
 
 意图解析有两套实现，输出同一个 `ParsedIntent` 契约，对下游 Router 完全透明：
@@ -213,6 +231,8 @@ retrieval-agent/
 │       │   ├── pdf.py
 │       │   └── code.py
 │       ├── presenter.py    # M7 输出与交互
+│       ├── session.py      # M7 交互会话状态（多轮 refine）
+│       ├── qa.py           # M8 本地问答（语料加载/检索/作答）
 │       ├── history.py      # 历史记录
 │       └── adapters/       # M3 数据源适配器
 │           ├── base.py     # SearchAdapter 抽象基类
