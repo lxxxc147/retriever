@@ -45,6 +45,7 @@ from .llm import LLMClient
 from .models import SearchQuery, SearchResult
 from .pipeline import run_pipeline
 from .presenter import (
+    render_answer,
     render_detail,
     render_download_batch,
     render_history,
@@ -55,6 +56,7 @@ from .presenter import (
     render_results,
     render_summary,
 )
+from .qa import answer_question, load_docs
 from .router import Router
 from .session import SearchSession
 from .summarizer import LLMSummarizer
@@ -171,6 +173,21 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--ask",
+        metavar="QUESTION",
+        default=None,
+        help=(
+            "对 --parsed-dir 里已解析的文档提问（M8 本地问答，Phase 4）。"
+            "配 --task 限定某个检索任务的解析结果。"
+        ),
+    )
+    parser.add_argument(
+        "--task",
+        metavar="TASK_ID",
+        default=None,
+        help="只使用指定 task_id 的解析结果（配合 --ask）。",
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"%(prog)s {__version__}",
@@ -192,6 +209,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.query == HISTORY_COMMAND:
         return _show_history(args.history_dir, args.limit)
+
+    if args.ask is not None:
+        return _run_qa(args)
 
     if args.interactive or args.query is None:
         # F8.2: a bare ``retrieve`` (or ``--interactive``) opens the
@@ -566,6 +586,35 @@ def _show_history(history_dir: Path | None, limit: int) -> int:
     entries = load_history(history_dir, max(1, limit))
     render_history(entries)
     return 0
+
+
+# -------------------------------------------------------------------------- M8 QA
+def _run_qa(args: argparse.Namespace) -> int:
+    """Answer one question over the parsed corpus (M8, Phase 4).
+
+    Uses the LLM when a key is configured and degrades to extractive answers
+    (most relevant original sentences) otherwise; with no parsed documents at
+    all it explains how to produce them and exits non-zero.
+    """
+    docs = load_docs(args.parsed_dir, task_id=args.task)
+    if not docs:
+        scope = f"task {args.task} " if args.task else ""
+        print(
+            f"没有找到{scope}已解析的文档 — 先运行："
+            f'retrieve "你的查询" --download --parse（产物目录：{args.parsed_dir}）'
+        )
+        return 1
+
+    ask_fn: Callable[[str], str] | None = None
+    model: str | None = None
+    client = LLMClient()
+    if client.configured:
+        model = client.model
+        ask_fn = lambda prompt: client.chat_sync([{"role": "user", "content": prompt}])
+
+    answer = answer_question(args.ask, docs, ask=ask_fn)
+    render_answer(answer, model=model)
+    return 0 if answer.text else 1
 
 
 def _resolve_pdf_parser() -> Any:

@@ -247,8 +247,8 @@
 | 编号 | 需求 | 优先级 |
 |---|---|---|
 | F7.1 | 结构化报告输出：序号/标题/一句话摘要/链接/本地路径/关键元数据 | P0 |
-| F7.2 | 输出后提供操作提示：`[d] 下载全部  [d 2] 下载第2条  [m] 继续筛选` | P0 |
-| F7.3 | 多轮 refine：基于上一轮结果追加条件再过滤 | P1 |
+| F7.2 | 输出后提供操作提示：`d 下载全部`、`d 2 下载第2条`、`N` 看详情、`help`、`q`（一次性模式下为 `[d] 下载全部 [d 2] 下载第2条` 等价提示） | P0 |
+| F7.3 | 多轮 refine：基于上一轮结果追加条件再过滤。**实现语义**：每轮 follow-up 先对当前结果做本地过滤（年份→published_at/extra.year、min_stars→extra.stars、语言、作者、分类、关键词命中标题/摘要；缺元数据的结果按"无法验证≈不满足"丢弃）；过滤为空时把新条件合并进累积查询重新搜索，绝不悄悄返回空列表；纯过滤语句（如"只要 2024 年的"）不改变会话 intent | P1 |
 | F7.4 | 检索历史落盘 `./history/`，支持 `history` 命令回看 | P1 |
 | F7.5 | 失败时给出可操作的原因说明（源站限流/需要登录/文件过大） | P0 |
 
@@ -266,15 +266,31 @@
 
 [d] 下载全部  [d 3] 下载第3条  [s 作者=Wang] 继续筛选
 ```
+> 实现注记（F7.4）：交互模式下**每一轮搜索/refine 记一条历史、每一次下载批次记一条**；一次性模式每次运行记一条（含下载计数）。历史目录为 `./history/<日期>.jsonl`，`retrieve history` 回看。
 
 ### 2.8 CLI 入口
 
 | 编号 | 需求 | 优先级 |
 |---|---|---|
 | F8.1 | `retrieve "查询语句"` 一次性检索 | P0 |
-| F8.2 | `retrieve` 进入交互模式，支持多轮 | P0 |
+| F8.2 | `retrieve` 进入交互模式，支持多轮。**已实现**：无参数或 `-i/--interactive` 进入；命令集为 `d`/`d N`/`N`（详情）/`help`/`q`，自然语言输入走多轮 refine；usage 错误只提示不退出会话；EOF 干净退出 | P0 |
 | F8.3 | `retrieve --source arxiv "查询"` 指定数据源 | P1 |
-| F8.4 | `retrieve history / config` 辅助命令 | P1 |
+| F8.4 | `retrieve history / config` 辅助命令（`history` 已实现；`config` 未实现，查看配置直接读 `config/` 与 `--help`） | P1 |
+| F8.5 | `retrieve --ask "问题" [--task <task_id>]` 对已解析文档做本地问答（见 §2.9 M8） | P2 |
+
+### 2.9 M8 本地问答模块（Local QA）
+
+**职责**：回答"已经下载并解析过的文档里说了什么"，把检索产物变成可追问的知识库（Phase 4 首项交付）。
+
+| 编号 | 需求 | 优先级 |
+|---|---|---|
+| F9.1 | 语料加载：扫描 `parsed/<日期>/<task_id>/*.json`（M6 产物），可限定 task；坏文件跳过不中断 | P0 |
+| F9.2 | 相关性检索：中英混合词汇重叠打分（拉丁词 + 中文 bigram，sqrt 长度归一），取 top-k 相关文档 | P0 |
+| F9.3 | 作答：配置了 LLM 时基于 top-k 片段生成回答；模型缺失/失败时退化为抽取式（按"命中问题术语数"挑选原句），任何情况下不因模型不可用而失败 | P0 |
+| F9.4 | 引用溯源：每条答案列出支撑文档的标题、task_id 与解析文件路径 | P0 |
+| F9.5 | 零命中语义：问题与语料无词汇重叠时明确告知"没有找到相关文档"并退出非零，不编造答案 | P1 |
+
+**非目标**：不做向量检索/embedding（本期用词汇重叠即可，文档量小）；不做跨语言检索（中文问题对英文论文需用户用英文关键词，或由 LLM 生成阶段自行弥合）。
 
 ---
 
@@ -333,6 +349,8 @@ retrieval-agent/
 │       │   ├── pdf.py
 │       │   └── code.py
 │       ├── presenter.py    # M7 输出与交互
+│       ├── session.py      # M7 交互会话状态（多轮 refine，F7.3/G4）
+│       ├── qa.py           # M8 本地问答（load/retrieve/answer，Phase 4）
 │       ├── history.py      # 历史记录
 │       └── adapters/       # M3 数据源适配器
 │           ├── base.py     # SearchAdapter 抽象基类
@@ -421,11 +439,11 @@ class DownloadManager:
 
 ### Phase 2：质量与体验（第 4~5 周）
 
-- Pipeline：去重、加权排序、一句话摘要
-- GitHub：Code Search、整仓 ZIP、Release 下载
-- Web Adapter 上线
-- Scholar Adapter 上线（成员A）
-- 多轮 refine、历史记录
+- Pipeline：去重、加权排序、一句话摘要 ✅
+- GitHub：Code Search、整仓 ZIP、Release 下载 ✅
+- Web Adapter 上线 ✅（真机验证受本机网络限制：DuckDuckGo 不可达，需在开放网络复验）
+- Scholar Adapter 上线（成员A）✅（同上，Google Scholar 在本机网络不可达）
+- 多轮 refine、历史记录 ✅（含交互模式 F8.2，见 §2.7/§2.8 实现注记）
 
 ### Phase 3：健壮性与内容解析（第 6 周）
 
@@ -437,7 +455,7 @@ class DownloadManager:
 ### Phase 4：扩展与打磨（第 7~8 周，按需）
 
 - 数据集源（HuggingFace）
-- manifest 驱动的本地知识库问答
+- manifest/parsed 驱动的本地知识库问答 ✅（初版：M8 `--ask`，见 §2.9）
 - 打包发布 / 给 Kimi Work 接入 Skill 化
 
 ### 里程碑看板（建议直接抄到 GitHub Projects）
