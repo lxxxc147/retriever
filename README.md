@@ -13,6 +13,19 @@ uv sync                 # 安装全部依赖（含 dev 组）
 cp .env.example .env    # 填入自己的 GitHub Token（见文件内注释）
 ```
 
+### 作为命令行工具安装（脱离源码目录）
+
+```bash
+uv tool install git+https://github.com/lxxxc147/retriever.git   # pipx 亦可
+retrieve --help          # 任意目录直接使用
+```
+
+### 接入 Kimi Work（Agent Skill 化）
+
+仓库自带 [docs/SKILL.md](docs/SKILL.md)：把该文件放入 Kimi Work 的 skills 目录，
+Agent 即可获得「何时调用 retrieve、调用哪些命令」的领域知识，自然语言说
+"帮我找几篇 X 的论文并下载"即可自动走完全流程。
+
 ### 代理（可选，国内建议配置）
 
 直连 `raw.githubusercontent.com` / `codeload.github.com` 经常在传输中途卡死，表现为
@@ -240,7 +253,8 @@ retrieval-agent/
 │           ├── arxiv.py    # ← 成员A
 │           ├── scholar.py  # ← 成员A（Phase 2）
 │           ├── web.py      # ← 成员A（Phase 2）
-│           └── github.py   # ← 成员B
+│           ├── github.py   # ← 成员B
+│           └── huggingface.py  # 数据集源（Phase 4，F3.7）
 ├── tests/
 │   ├── fixtures/           # mock 响应样本（JSON）
 │   ├── adapters/
