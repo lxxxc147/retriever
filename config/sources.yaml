@@ -44,3 +44,10 @@ pdf:
   adapter: retriever.adapters.pdf:PdfAdapter
   # PDF 是"文档形态"源：只在网页类检索里补一刀，不参与 paper 意图，避免噪声
   intents: [web]
+
+# ---------------------------------------------------------------- Phase 4 数据源
+huggingface:
+  enabled: true
+  rate_limit_qps: 2
+  adapter: retriever.adapters.huggingface:HuggingfaceAdapter
+  intents: [dataset]
