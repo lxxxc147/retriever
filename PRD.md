@@ -160,7 +160,7 @@
 | F3.4 | GitHub 文件内容读取（raw.githubusercontent / MCP） | P0 | 成员B |
 | F3.5 | Scholar Adapter（引用 Google Scholar） | P1 | 成员A |
 | F3.6 | Web Adapter（通用搜索 + 网页正文提取） | P1 | 成员A |
-| F3.7 | HuggingFace / Kaggle 数据集 Adapter | P2 | 待定 |
+| F3.7 | HuggingFace 数据集 Adapter（Hub API 搜索 + dataset card 下载；Kaggle 未实现） | P2 | 负责人（Phase 4 ✅） |
 | F3.8 | 每个 Adapter 内置限流与重试（指数退避，最多 3 次） | P0 | 双方各自负责 |
 
 **统一结果契约**（SearchResult）：
@@ -357,7 +357,8 @@ retrieval-agent/
 │           ├── arxiv.py    # ← 成员A
 │           ├── scholar.py  # ← 成员A（Phase 2）
 │           ├── web.py      # ← 成员A（Phase 2）
-│           └── github.py   # ← 成员B（repo + code search + 文件）
+│           ├── github.py   # ← 成员B（repo + code search + 文件）
+│           └── huggingface.py  # 数据集源（Phase 4，F3.7）
 ├── tests/
 │   ├── fixtures/           # mock 响应样本（JSON）
 │   ├── test_intent.py
@@ -454,9 +455,9 @@ class DownloadManager:
 
 ### Phase 4：扩展与打磨（第 7~8 周，按需）
 
-- 数据集源（HuggingFace）
+- 数据集源（HuggingFace）✅（F3.7：Hub API 搜索 + card 下载，真机验证受本机网络限制——huggingface.co 不可达，需开放网络复验）
 - manifest/parsed 驱动的本地知识库问答 ✅（初版：M8 `--ask`，见 §2.9）
-- 打包发布 / 给 Kimi Work 接入 Skill 化
+- 打包发布 / 给 Kimi Work 接入 Skill 化 ✅（`uv build` 产物验证通过，`uv tool install git+...` 即可安装；`docs/SKILL.md` 已交付，拷入 Kimi Work skills 目录即完成接入）
 
 ### 里程碑看板（建议直接抄到 GitHub Projects）
 

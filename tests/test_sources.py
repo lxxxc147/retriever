@@ -116,7 +116,7 @@ def test_phase2_sources_are_registered_and_enabled() -> None:
 
 
 def test_default_router_registers_every_enabled_source() -> None:
-    """``Router()`` loads all five enabled sources straight from the registry."""
+    """``Router()`` loads all six enabled sources straight from the registry."""
     router = Router()
 
     assert [adapter.name for adapter in router.adapters] == [
@@ -125,6 +125,7 @@ def test_default_router_registers_every_enabled_source() -> None:
         "scholar",
         "web",
         "pdf",
+        "huggingface",
     ]
 
 

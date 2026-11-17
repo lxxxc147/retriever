@@ -73,9 +73,13 @@ def test_route_code_file_selects_github_only() -> None:
 
 
 def test_route_dataset_and_web_select_their_sources() -> None:
-    """dataset 走 arXiv+GitHub；web 另外补上 Web 与 PDF 两个形态源。"""
+    """dataset 走 arXiv+GitHub+HuggingFace；web 另外补上 Web 与 PDF 两个形态源。"""
     router = Router()
-    assert [a.name for a in router.route(_parsed("dataset"))] == ["arxiv", "github"]
+    assert [a.name for a in router.route(_parsed("dataset"))] == [
+        "arxiv",
+        "github",
+        "huggingface",
+    ]
     assert [a.name for a in router.route(_parsed("web"))] == ["arxiv", "github", "web", "pdf"]
 
 
